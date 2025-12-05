@@ -2804,6 +2804,187 @@ app.post('/activepassdaterange', function (req, res) {
 
 });
 
+//Sick Leave - Scan ID page
+app.get('/sickleave', verifyjwt, function (req, res) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    role = decode.role;
+    if (role == "SuperID" || role == "Hostelauthority" || role == "BoysHostelAdmin" || role == "GirlsHostelAdmin") {
+      res.render(__dirname + '/views/sickleave', { message: req.flash('message') });
+    } else {
+      req.flash('message', 'Unauthorised access');
+      res.redirect('/loginpanel');
+    }
+  } catch (err) {
+    res.clearCookie("jwt");
+    req.flash('message', 'Something went wrong');
+    return res.redirect('/loginpanel');
+  }
+});
+
+//Sick Leave - Form page after scanning
+app.get('/sickleaveform/:uid', verifyjwt, function (req, res) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    role = decode.role;
+    if (role == "SuperID" || role == "Hostelauthority" || role == "BoysHostelAdmin" || role == "GirlsHostelAdmin") {
+      var uid = req.params.uid;
+      dbbconnection.getConnection(function (err, connection) {
+        var sql = "select * from studentdetails where category='Hostel' and uid='" + uid + "'";
+        connection.query(sql, function (err, result) {
+          if (err) throw err;
+          if (result.length > 0) {
+            res.render(__dirname + '/views/sickleaveform', { result: result, message: req.flash('message') });
+          } else {
+            req.flash('message', 'Student not found or not a hostel student');
+            res.redirect('/sickleave');
+          }
+          connection.release();
+        });
+      });
+    } else {
+      req.flash('message', 'Unauthorised access');
+      res.redirect('/loginpanel');
+    }
+  } catch (err) {
+    res.clearCookie("jwt");
+    req.flash('message', 'Something went wrong');
+    return res.redirect('/loginpanel');
+  }
+});
+
+//Sick Leave - Save sick leave record
+app.post('/savesickleave/:uid', verifyjwt, function (req, res) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    role = decode.role;
+    var adminname = decode.adminname;
+    if (role == "SuperID" || role == "Hostelauthority" || role == "BoysHostelAdmin" || role == "GirlsHostelAdmin") {
+      var uid = req.params.uid;
+      var illness = req.body.illness || req.body.other_illness;
+      if (!illness || illness.trim() === '') {
+        req.flash('message', 'Please select or enter an illness type');
+        return res.redirect('/sickleaveform/' + uid);
+      }
+      // Sanitize illness input to prevent SQL injection
+      illness = illness.trim().replace(/'/g, "''");
+      
+      dbbconnection.getConnection(function (err, connection) {
+        var currentDateTime = datetime(currentdate());
+        var logdate = currentDateTime.split(' ')[0];
+        var logtime = currentDateTime.split(' ')[1] + ' ' + (currentDateTime.split(' ')[2] || '');
+        
+        var sql = "INSERT INTO sick_leave_logs (uid, illness, logdate, logtime, recorded_by, created_at) VALUES ('" + uid + "', '" + illness + "', '" + logdate + "', '" + logtime + "', '" + adminname + "', '" + currentDateTime + "')";
+        connection.query(sql, function (err, result) {
+          if (err) {
+            console.error('Error saving sick leave:', err);
+            req.flash('message', 'Error saving sick leave record. Please try again.');
+            res.redirect('/sickleaveform/' + uid);
+          } else {
+            req.flash('message', 'Sick leave recorded successfully');
+            res.redirect('/sickleave');
+          }
+          connection.release();
+        });
+      });
+    } else {
+      req.flash('message', 'Unauthorised access');
+      res.redirect('/loginpanel');
+    }
+  } catch (err) {
+    res.clearCookie("jwt");
+    req.flash('message', 'Something went wrong');
+    return res.redirect('/loginpanel');
+  }
+});
+
+//Sick Leave - View logs
+app.get('/sickleavelogs', verifyjwt, function (req, res) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    role = decode.role;
+    dbbconnection.getConnection(function (err, connection) {
+      if (role == "BoysHostelAdmin") {
+        var sql = "SELECT sl.*, stu.sname, stu.dept FROM sick_leave_logs as sl JOIN studentdetails as stu ON sl.uid = stu.uid WHERE stu.gender='MALE' AND stu.category='Hostel' ORDER BY sl.created_at DESC LIMIT 100";
+        connection.query(sql, function (err, result) {
+          if (err) throw err;
+          res.render(__dirname + '/views/sickleavelogs', { result: result, message: req.flash('message'), role: role });
+          connection.release();
+        });
+      } else if (role == "GirlsHostelAdmin") {
+        var sql = "SELECT sl.*, stu.sname, stu.dept FROM sick_leave_logs as sl JOIN studentdetails as stu ON sl.uid = stu.uid WHERE stu.gender='FEMALE' AND stu.category='Hostel' ORDER BY sl.created_at DESC LIMIT 100";
+        connection.query(sql, function (err, result) {
+          if (err) throw err;
+          res.render(__dirname + '/views/sickleavelogs', { result: result, message: req.flash('message'), role: role });
+          connection.release();
+        });
+      } else if (role == "SuperID") {
+        var sql = "SELECT sl.*, stu.sname, stu.dept FROM sick_leave_logs as sl JOIN studentdetails as stu ON sl.uid = stu.uid WHERE stu.category='Hostel' ORDER BY sl.created_at DESC LIMIT 100";
+        connection.query(sql, function (err, result) {
+          if (err) throw err;
+          res.render(__dirname + '/views/sickleavelogs', { result: result, message: req.flash('message'), role: role });
+          connection.release();
+        });
+      } else {
+        req.flash('message', 'Unauthorised access');
+        res.redirect('/loginpanel');
+        connection.release();
+      }
+    });
+  } catch (err) {
+    res.clearCookie("jwt");
+    req.flash('message', 'Something went wrong');
+    return res.redirect('/loginpanel');
+  }
+});
+
+//Sick Leave - Date range filter
+app.post('/sickleavelogsdaterange', verifyjwt, function (req, res) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    role = decode.role;
+    var datefrom = req.body.datefrom;
+    var dateto = req.body.dateto;
+    dbbconnection.getConnection(function (err, connection) {
+      if (role == "BoysHostelAdmin") {
+        var sql = "SELECT sl.*, stu.sname, stu.dept FROM sick_leave_logs as sl JOIN studentdetails as stu ON sl.uid = stu.uid WHERE stu.gender='MALE' AND stu.category='Hostel' AND date(sl.logdate) BETWEEN date('" + datefrom + "') AND date('" + dateto + "') ORDER BY sl.created_at DESC";
+        connection.query(sql, function (err, result) {
+          if (err) throw err;
+          res.render(__dirname + '/views/sickleavelogs', { result: result, message: req.flash('message'), role: role });
+          connection.release();
+        });
+      } else if (role == "GirlsHostelAdmin") {
+        var sql = "SELECT sl.*, stu.sname, stu.dept FROM sick_leave_logs as sl JOIN studentdetails as stu ON sl.uid = stu.uid WHERE stu.gender='FEMALE' AND stu.category='Hostel' AND date(sl.logdate) BETWEEN date('" + datefrom + "') AND date('" + dateto + "') ORDER BY sl.created_at DESC";
+        connection.query(sql, function (err, result) {
+          if (err) throw err;
+          res.render(__dirname + '/views/sickleavelogs', { result: result, message: req.flash('message'), role: role });
+          connection.release();
+        });
+      } else if (role == "SuperID") {
+        var sql = "SELECT sl.*, stu.sname, stu.dept FROM sick_leave_logs as sl JOIN studentdetails as stu ON sl.uid = stu.uid WHERE stu.category='Hostel' AND date(sl.logdate) BETWEEN date('" + datefrom + "') AND date('" + dateto + "') ORDER BY sl.created_at DESC";
+        connection.query(sql, function (err, result) {
+          if (err) throw err;
+          res.render(__dirname + '/views/sickleavelogs', { result: result, message: req.flash('message'), role: role });
+          connection.release();
+        });
+      } else {
+        req.flash('message', 'Unauthorised access');
+        res.redirect('/loginpanel');
+        connection.release();
+      }
+    });
+  } catch (err) {
+    res.clearCookie("jwt");
+    req.flash('message', 'Something went wrong');
+    return res.redirect('/loginpanel');
+  }
+});
+
 //campus reports
 app.get('/campusreports', verifyjwt, function (req, res) {
 
