@@ -3273,6 +3273,162 @@ app.get('/student/dashboard', verifyStudentJwt, function (req, res) {
   });
 });
 
+// API to get all available rooms
+app.get('/api/rooms', verifyStudentJwt, function (req, res) {
+  const bookingDate = req.query.bookingDate;
+  const selectedBlock = req.query.block; 
+  const selectedFloor = req.query.floor; 
+
+  if (!bookingDate) {
+    return res.status(400).json({ message: 'Booking date is required.' });
+  }
+
+  dbbconnection.getConnection(function (err, connection) {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ message: 'Database error' });
+    }
+
+    let sql = `
+      SELECT 
+          r.id, 
+          r.name, 
+          r.capacity, 
+          r.price_per_night, 
+          r.description, 
+          r.is_available, 
+          r.block, 
+          r.floor, 
+          r.room_type,
+          CASE
+              WHEN MAX(b.id) IS NOT NULL THEN 'on_hold'
+              ELSE 'available'
+          END AS current_status
+      FROM 
+          rooms r
+      LEFT JOIN 
+          bookings b ON r.id = b.room_id
+          AND b.booking_date = ?
+          AND b.status IN ('on_hold', 'confirmed')
+      WHERE 
+          r.is_available = TRUE
+    `;
+    const queryParams = [bookingDate];
+
+    if (selectedBlock) {
+      sql += ` AND r.block = ?`;
+      queryParams.push(selectedBlock);
+    }
+    if (selectedFloor) {
+      sql += ` AND r.floor = ?`;
+      queryParams.push(selectedFloor);
+    }
+
+    sql += `
+      GROUP BY r.id 
+      ORDER BY r.block, r.floor, r.name
+    `;
+    
+    connection.query(sql, queryParams, function (err, results) {
+      connection.release();
+      if (err) {
+        console.error('Error fetching rooms:', err);
+        return res.status(500).json({ message: 'Error fetching rooms' });
+      }
+      res.json(results);
+    });
+  });
+});
+
+// API to create a new booking
+app.post('/api/bookings', verifyStudentJwt, function (req, res) {
+  const studentId = req.studentUid; // From JWT token
+  const { roomId, bookingDate, selectedRoomPrice } = req.body; // Updated params
+
+  if (!roomId || !bookingDate || !selectedRoomPrice) {
+    return res.status(400).json({ message: 'Missing required booking information' });
+  }
+
+  dbbconnection.getConnection(function (err, connection) {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ message: 'Database error' });
+    }
+
+    // Check for overlapping bookings for the selected room and date
+    const checkAvailabilitySql = `
+      SELECT COUNT(*) AS count FROM bookings
+      WHERE room_id = ?
+      AND booking_date = ?
+      AND status IN ('on_hold', 'confirmed')
+    `;
+    
+    connection.query(checkAvailabilitySql, [roomId, bookingDate], function (err, availabilityResults) {
+      if (err) {
+        connection.release();
+        console.error('Error checking room availability:', err);
+        return res.status(500).json({ message: 'Error checking room availability' });
+      }
+
+      if (availabilityResults[0].count > 0) {
+        connection.release();
+        return res.status(409).json({ message: 'Room is not available for the selected date' });
+      }
+
+      // Insert new booking
+      const insertBookingSql = "INSERT INTO bookings (room_id, student_id, booking_date, total_price, status, payment_status) VALUES (?, ?, ?, ?, ?, ?)";
+      connection.query(insertBookingSql, [roomId, studentId, bookingDate, selectedRoomPrice, 'on_hold', 'pending'], function (err, bookingResults) {
+        connection.release();
+        if (err) {
+          console.error('Error creating booking:', err);
+          return res.status(500).json({ message: 'Error creating booking' });
+        }
+        res.status(201).json({ message: 'Booking created successfully and is on hold for payment.', bookingId: bookingResults.insertId });
+      });
+    });
+  });
+});
+
+// API to get a student's booking history
+app.get('/api/student/bookings', verifyStudentJwt, function (req, res) {
+  const studentId = req.studentUid; // From JWT token
+
+  dbbconnection.getConnection(function (err, connection) {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ message: 'Database error' });
+    }
+
+    const sql = `
+      SELECT 
+          b.*, 
+          r.name as room_name, 
+          r.capacity, 
+          r.price_per_night,
+          r.block,
+          r.floor,
+          r.room_type
+      FROM 
+          bookings b
+      JOIN 
+          rooms r ON b.room_id = r.id
+      WHERE 
+          b.student_id = ?
+      ORDER BY 
+          b.booking_date DESC, b.created_at DESC
+    `;
+
+    connection.query(sql, [studentId], function (err, results) {
+      connection.release();
+      if (err) {
+        console.error('Error fetching student bookings:', err);
+        return res.status(500).json({ message: 'Error fetching student bookings' });
+      }
+      res.json(results);
+    });
+  });
+});
+
 // Student Profile
 app.get('/student/profile', verifyStudentJwt, function (req, res) {
   const uid = req.studentUid;
@@ -3363,7 +3519,7 @@ app.post('/student/changepassword', verifyStudentJwt, async function (req, res) 
       });
     });
   });
-});
+}); 
 
 // Student Attendance
 app.get('/student/attendance', verifyStudentJwt, function (req, res) {
@@ -3889,6 +4045,237 @@ app.post('/admin/rejectrequest/:id', verifyjwt, function (req, res) {
     res.clearCookie("jwt");
     req.flash('message', 'Session expired');
     return res.redirect('/loginpanel');
+  }
+});
+
+// =====================================================
+// ADMIN - ROOM BOOKING MANAGEMENT
+// =====================================================
+
+// Admin - Get All Room Bookings
+app.get('/api/admin/bookings', verifyjwt, function (req, res) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    const role = decode.role;
+
+    // Only SuperID or Hostel authority can view all bookings
+    if (role !== "SuperID" && role !== "BoysHostelAdmin") {
+      return res.status(403).json({ message: 'Unauthorized access' });
+    }
+
+    dbbconnection.getConnection(function (err, connection) {
+      if (err) {
+        console.error('Database error:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+
+      const sql = `
+        SELECT 
+            b.id AS booking_id,
+            b.booking_date,
+            b.total_price,
+            b.status AS booking_status,
+            b.payment_status,
+            b.created_at AS booking_created_at,
+            r.name AS room_name,
+            r.block,
+            r.floor,
+            r.room_type,
+            sd.uid AS student_uid,
+            sd.sname AS student_name,
+            sd.mobileno AS student_mobile
+        FROM 
+            bookings b
+        JOIN 
+            rooms r ON b.room_id = r.id
+        JOIN 
+            studentdetails sd ON b.student_id = sd.uid
+        ORDER BY 
+            b.created_at DESC
+      `;
+
+      connection.query(sql, function (err, results) {
+        connection.release();
+        if (err) {
+          console.error('Error fetching admin bookings:', err);
+          return res.status(500).json({ message: 'Error fetching bookings' });
+        }
+        res.json(results);
+      });
+    });
+  } catch (err) {
+    res.clearCookie("jwt");
+    return res.status(401).json({ message: 'Session expired or unauthorized' });
+  }
+});
+
+// Admin - Confirm Payment for a Booking
+app.post('/api/admin/bookings/:id/confirm_payment', verifyjwt, function (req, res) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    const adminName = decode.adminname;
+    const bookingId = req.params.id;
+
+    // Only SuperID or Hostel authority can confirm payment
+    if (decode.role !== "SuperID" && decode.role !== "Hostelauthority") {
+      return res.status(403).json({ message: 'Unauthorized access' });
+    }
+
+    dbbconnection.getConnection(function (err, connection) {
+      if (err) {
+        console.error('Database error:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+
+      const updateSql = "UPDATE bookings SET payment_status = 'paid' WHERE id = ? AND payment_status = 'pending'";
+      connection.query(updateSql, [bookingId], function (err, result) {
+        connection.release();
+        if (err) {
+          console.error('Error confirming payment:', err);
+          return res.status(500).json({ message: 'Error confirming payment' });
+        }
+        if (result.affectedRows === 0) {
+          return res.status(404).json({ message: 'Booking not found or payment already confirmed' });
+        }
+        res.json({ message: 'Payment confirmed successfully' });
+      });
+    });
+  } catch (err) {
+    res.clearCookie("jwt");
+    return res.status(401).json({ message: 'Session expired or unauthorized' });
+  }
+});
+
+// Admin - Approve a Booking
+app.post('/api/admin/bookings/:id/approve', verifyjwt, function (req, res) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    const adminName = decode.adminname;
+    const bookingId = req.params.id;
+
+    // Only SuperID or Hostel authority can approve bookings
+    if (decode.role !== "SuperID" && decode.role !== "Hostelauthority") {
+      return res.status(403).json({ message: 'Unauthorized access' });
+    }
+
+    dbbconnection.getConnection(function (err, connection) {
+      if (err) {
+        console.error('Database error:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+
+      // Ensure payment is paid before approving
+      const checkPaymentSql = "SELECT payment_status, student_id, room_id, booking_date FROM bookings WHERE id = ?";
+      connection.query(checkPaymentSql, [bookingId], function(err, bookingInfo) {
+        if (err || bookingInfo.length === 0) {
+          connection.release();
+          return res.status(404).json({ message: 'Booking not found' });
+        }
+
+        if (bookingInfo[0].payment_status !== 'paid') {
+          connection.release();
+          return res.status(400).json({ message: 'Payment not confirmed for this booking' });
+        }
+
+        const studentUid = bookingInfo[0].student_id;
+        const roomId = bookingInfo[0].room_id;
+        const bookingDate = bookingInfo[0].booking_date;
+
+        // Update booking status to confirmed
+        const updateSql = "UPDATE bookings SET status = 'confirmed' WHERE id = ? AND status = 'on_hold'";
+        connection.query(updateSql, [bookingId], function (err, result) {
+          if (err) {
+            connection.release();
+            console.error('Error approving booking:', err);
+            return res.status(500).json({ message: 'Error approving booking' });
+          }
+          if (result.affectedRows === 0) {
+            connection.release();
+            return res.status(404).json({ message: 'Booking not found or already approved/cancelled' });
+          }
+
+          // Add notification for student
+          const notifMsg = `Your room booking for room ${roomId} on ${bookingDate.toLocaleDateString()} has been confirmed!`;
+          const notifSql = "INSERT INTO student_notifications (uid, type, title, message, created_at) VALUES (?, ?, ?, ?, NOW())";
+          connection.query(notifSql, [studentUid, 'room_booking_confirmed', 'Room Booking Confirmed', notifMsg], function(err, notifResult) {
+            connection.release();
+            if (err) {
+              console.error('Error sending notification:', err);
+            }
+            res.json({ message: 'Booking approved successfully' });
+          });
+        });
+      });
+    });
+  } catch (err) {
+    res.clearCookie("jwt");
+    return res.status(401).json({ message: 'Session expired or unauthorized' });
+  }
+});
+
+// Admin - Reject/Cancel a Booking
+app.post('/api/admin/bookings/:id/reject', verifyjwt, function (req, res) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    const adminName = decode.adminname;
+    const bookingId = req.params.id;
+    const rejectionReason = req.body.reason || 'No reason provided';
+
+    // Only SuperID or Hostel authority can reject/cancel bookings
+    if (decode.role !== "SuperID" && decode.role !== "Hostelauthority") {
+      return res.status(403).json({ message: 'Unauthorized access' });
+    }
+
+    dbbconnection.getConnection(function (err, connection) {
+      if (err) {
+        console.error('Database error:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+
+      // Update booking status to cancelled
+      const updateSql = "UPDATE bookings SET status = 'cancelled', rejection_reason = ? WHERE id = ? AND status IN ('pending', 'on_hold', 'confirmed')";
+      connection.query(updateSql, [rejectionReason, bookingId], function (err, result) {
+        if (err) {
+          connection.release();
+          console.error('Error rejecting booking:', err);
+          return res.status(500).json({ message: 'Error rejecting booking' });
+        }
+        if (result.affectedRows === 0) {
+          connection.release();
+          return res.status(404).json({ message: 'Booking not found or already cancelled' });
+        }
+
+        // Get student UID for notification
+        const getStudentSql = "SELECT student_id, room_id, booking_date FROM bookings WHERE id = ?";
+        connection.query(getStudentSql, [bookingId], function(err, bookingInfo) {
+          connection.release();
+          if (err || bookingInfo.length === 0) {
+            console.error('Error fetching student ID for notification:', err);
+            return res.json({ message: 'Booking rejected, but notification failed' });
+          }
+          const studentUid = bookingInfo[0].student_id;
+          const roomId = bookingInfo[0].room_id;
+          const bookingDate = bookingInfo[0].booking_date;
+
+          // Add notification for student
+          const notifMsg = `Your room booking for room ${roomId} on ${bookingDate.toLocaleDateString()} has been rejected. Reason: ${rejectionReason}`; // Use `roomId` instead of `room_name`
+          const notifSql = "INSERT INTO student_notifications (uid, type, title, message, created_at) VALUES (?, ?, ?, ?, NOW())";
+          connection.query(notifSql, [studentUid, 'room_booking_rejected', 'Room Booking Rejected', notifMsg], function(err, notifResult) {
+            if (err) {
+              console.error('Error sending notification:', err);
+            }
+            res.json({ message: 'Booking rejected successfully' });
+          });
+        });
+      });
+    });
+  } catch (err) {
+    res.clearCookie("jwt");
+    return res.status(401).json({ message: 'Session expired or unauthorized' });
   }
 });
 
