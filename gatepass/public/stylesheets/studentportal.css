@@ -1677,3 +1677,30 @@ body {
     background: rgba(249, 115, 22, 0.15); /* Orange background for on_hold */
     color: #f97316; /* Orange text for on_hold */
 }
+
+/* Room Block and Floor Sections */
+.room-block-section {
+    margin-bottom: 30px;
+}
+
+.room-block-section h3 {
+    font-size: 20px;
+    color: #1a1a2e;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #667eea;
+}
+
+.room-floor-section {
+    margin-bottom: 20px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 10px;
+}
+
+.room-floor-section h4 {
+    font-size: 16px;
+    color: #555;
+    margin-bottom: 15px;
+    font-weight: 500;
+}

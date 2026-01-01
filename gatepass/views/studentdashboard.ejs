@@ -201,6 +201,10 @@
             </div>
             <div class="filters">
                 <div class="form-group">
+                    <label for="availability-date">Check Availability Date:</label>
+                    <input type="date" id="availability-date" required>
+                </div>
+                <div class="form-group">
                     <label for="blockFilter">Block:</label>
                     <select id="blockFilter">
                         <option value="">All Blocks</option>
@@ -229,7 +233,7 @@
                 <div class="modal-content">
                     <span class="close-button">&times;</span>
                     <h3>Book Room <span id="modal-room-name"></span></h3>
-                    <!-- <form id="booking-form">
+                    <form id="booking-form">
                         <input type="hidden" id="modal-room-id">
                         <div class="form-group">
                             <label for="check-in-date">Booking Date:</label>
@@ -241,8 +245,8 @@
                         <option value="Single Bed">74000</option>
                         <option value="Double Bed">69000</option>
                         <option value="Triple Bed">64000</option>
-                       </select> -->
-                            <p>Coming Soon until your current rent time ends.....</p>
+                       </select>
+                        <p>Please pay the total price to the hostel office</p>
                         <button type="submit" class="btn btn-primary">Confirm Booking</button>
                     </form>
                 </div>
@@ -393,7 +397,8 @@
         const bookingForm = document.getElementById('booking-form');
         const modalRoomName = document.getElementById('modal-room-name');
         const modalRoomId = document.getElementById('modal-room-id');
-        const bookingDateInput = document.getElementById('check-in-date'); // Renamed from check-in-date
+        const availabilityDateInput = document.getElementById('availability-date'); // Date picker for checking availability
+        const bookingDateInput = document.getElementById('check-in-date'); // Date input in booking modal
         const totalPriceSelect = document.getElementById('total-price'); // Now a select element
         const blockFilter = document.getElementById('blockFilter');
         const floorFilter = document.getElementById('floorFilter');
@@ -425,19 +430,22 @@
         // Fetch Rooms
         async function fetchRooms() {
             try {
-                const bookingDate = bookingDateInput.value; // Get selected date for availability check
+                const bookingDate = availabilityDateInput.value; // Get selected date for availability check
                 const selectedBlock = blockFilter.value;
                 const selectedFloor = floorFilter.value;
 
+                if (!bookingDate) {
+                    availableRoomsDiv.innerHTML = '<p>Please select a date to check room availability.</p>';
+                    return;
+                }
+
                 let url = '/api/rooms';
                 const params = new URLSearchParams();
-                if (bookingDate) params.append('bookingDate', bookingDate);
+                params.append('bookingDate', bookingDate); // Always include booking date (required by backend)
                 if (selectedBlock) params.append('block', selectedBlock);
                 if (selectedFloor) params.append('floor', selectedFloor);
 
-                if (params.toString()) {
-                    url += `?${params.toString()}`;
-                }
+                url += `?${params.toString()}`;
 
                 const response = await fetch(url);
                 if (!response.ok) {
@@ -565,7 +573,7 @@
         function openBookingModal(roomId, roomName, roomType) {
             modalRoomId.value = roomId;
             modalRoomName.textContent = roomName; // Display only room name
-            bookingDateInput.value = ''; // Clear previous date
+            bookingDateInput.value = availabilityDateInput.value || ''; // Pre-fill with selected availability date
             
             // Set initial value of total-price select based on roomType
             // And set the display of the dropdown
@@ -642,16 +650,17 @@
 
         // Initial load
         document.addEventListener('DOMContentLoaded', () => {
-            // Set min date for bookingDateInput to today
+            // Set min date for both date inputs to today
             const today = new Date().toISOString().split('T')[0];
+            availabilityDateInput.setAttribute('min', today);
+            availabilityDateInput.value = today; // Set default to today for availability check
             bookingDateInput.setAttribute('min', today);
-            bookingDateInput.value = today;
             
             fetchRooms();
             fetchMyBookings();
 
-            // Add event listener for date input change to re-fetch rooms
-            bookingDateInput.addEventListener('change', fetchRooms);
+            // Add event listeners for filter changes to re-fetch rooms
+            availabilityDateInput.addEventListener('change', fetchRooms);
             blockFilter.addEventListener('change', fetchRooms);
             floorFilter.addEventListener('change', fetchRooms);
         });
