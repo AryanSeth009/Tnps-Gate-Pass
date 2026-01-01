@@ -4280,6 +4280,207 @@ app.post('/api/admin/bookings/:id/reject', verifyjwt, function (req, res) {
 });
 
 
+
+// =============================================================
+// START: ATTENDANCE MODULE (Copy to bottom of app.js)
+// =============================================================
+
+// 1. SHOW ATTENDANCE PAGE (GET)
+// This fixes the "Cannot GET /attendance" error
+app.get('/attendance', verifyjwt, function (req, res) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+      const decode = jwt.verify(tokenadmin, secretkey);
+      const role = decode.role;
+
+      // Security Check
+      if (["SuperID", "BoysHostelAdmin", "GirlsHostelAdmin", "Hostelauthority"].includes(role)) {
+          
+          dbbconnection.getConnection(function (err, connection) {
+              if (err) { console.error("DB Connection Error:", err); return res.redirect('/loginpanel'); }
+
+              // 1. Fetch Students & Their Status
+              let sqlStudents = `
+                  SELECT s.*, IFNULL(d.status, 'Pending') as today_status 
+                  FROM studentdetails s 
+                  LEFT JOIN daily_attendance d ON s.uid = d.uid AND d.date = CURDATE()
+                  WHERE s.category='Hostel'
+              `;
+
+              if (role === "BoysHostelAdmin") sqlStudents += " AND s.gender='MALE'";
+              else if (role === "GirlsHostelAdmin") sqlStudents += " AND s.gender='FEMALE'";
+              
+              sqlStudents += " ORDER BY s.room_no ASC, s.bed_no ASC";
+
+              // 2. Fetch Dashboard Statistics
+              let sqlStats = `
+                  SELECT 
+                      COUNT(*) as Total,
+                      SUM(CASE WHEN d.status = 'Present' THEN 1 ELSE 0 END) as InHostel,
+                      SUM(CASE WHEN d.status = 'Absent' THEN 1 ELSE 0 END) as AtCollege,
+                      SUM(CASE WHEN d.status = 'Sick' THEN 1 ELSE 0 END) as Sick
+                  FROM studentdetails s
+                  LEFT JOIN daily_attendance d ON s.uid = d.uid AND d.date = CURDATE()
+                  WHERE s.category='Hostel'
+              `;
+              
+              if (role === "BoysHostelAdmin") sqlStats += " AND s.gender='MALE'";
+              else if (role === "GirlsHostelAdmin") sqlStats += " AND s.gender='FEMALE'";
+
+              // Execute Queries
+              connection.query(sqlStudents, function (err, resultStudents) {
+                  if (err) { connection.release(); console.error(err); return; }
+
+                  connection.query(sqlStats, function (err, resultStats) {
+                      connection.release();
+                      
+                      // Render Page
+                      res.render(__dirname + '/views/attendance', { 
+                          serverData: resultStudents,
+                          stats: resultStats[0], 
+                          role: role,
+                          message: req.flash('message')
+                      });
+                  });
+              });
+          });
+      } else {
+          req.flash('message', 'Unauthorised Access');
+          res.redirect('/loginpanel');
+      }
+  } catch (err) {
+      res.clearCookie("jwt");
+      return res.redirect('/loginpanel');
+  }
+});
+
+// 2. SAVE ATTENDANCE (POST)
+// This fixes the "Server returned 404" or "Connection Failed" error
+app.post('/api/mark-attendance', verifyjwt, (req, res) => {
+  const { uid, status } = req.body;
+  
+  if(!uid || !status) {
+      return res.status(400).json({ success: false, message: "Missing Data" });
+  }
+
+  try {
+      const tokenadmin = req.cookies.jwt;
+      const decode = jwt.verify(tokenadmin, secretkey);
+      const markedBy = decode.adminname || 'Admin';
+
+      dbbconnection.getConnection((err, connection) => {
+          if (err) return res.status(500).json({ success: false, message: "DB Error" });
+
+          const checkSql = "SELECT * FROM daily_attendance WHERE uid=? AND date=CURDATE()";
+          
+          connection.query(checkSql, [uid], (err, result) => {
+              if (err) { connection.release(); return res.status(500).json({ success: false }); }
+
+              if(result.length > 0) {
+                  // Update existing
+                  const updateSql = "UPDATE daily_attendance SET status=?, marked_by=? WHERE uid=? AND date=CURDATE()";
+                  connection.query(updateSql, [status, markedBy, uid], (err) => {
+                      connection.release();
+                      res.json({ success: true });
+                  });
+              } else {
+                  // Insert new
+                  const insertSql = "INSERT INTO daily_attendance (uid, date, status, marked_by) VALUES (?, CURDATE(), ?, ?)";
+                  connection.query(insertSql, [uid, status, markedBy], (err) => {
+                      connection.release();
+                      res.json({ success: true });
+                  });
+              }
+          });
+      });
+  } catch(e) {
+      return res.status(401).json({ success: false, message: "Auth Error" });
+  }
+});
+
+// =============================================================
+// END: ATTENDANCE MODULE
+// =============================================================
+// ==========================================
+// 1. GLOBAL ANALYTICS DASHBOARD (REMOVING STATUS, ADDING BLOCK BREAKDOWN)
+// ==========================================
+app.get('/analytics/global', verifyjwt, async function (req, res) {
+  try {
+      const tokenadmin = req.cookies.jwt;
+      const decode = jwt.verify(tokenadmin, secretkey);
+      const role = decode.role;
+
+      dbbconnection.getConnection((err, connection) => {
+          if (err) { console.error("DB Connection Error:", err); return res.redirect('/loginpanel'); }
+
+          // Query 1: Today's Attendance Counts (Present/Absent/Homepass)
+          const sqlAttendance = `
+              SELECT 
+                  COUNT(s.uid) as Total,
+                  SUM(CASE WHEN d.status = 'Present' THEN 1 ELSE 0 END) as Present,
+                  SUM(CASE WHEN d.status = 'Absent' THEN 1 ELSE 0 END) as Absent,
+                  SUM(CASE WHEN d.status = 'Home' THEN 1 ELSE 0 END) as Home
+              FROM studentdetails s
+              LEFT JOIN daily_attendance d ON s.uid = d.uid AND d.date = CURDATE()
+              WHERE s.category='Hostel'`;
+
+          // Query 2: Mess Utilization (Veg vs Non-Veg)
+          const sqlMess = `
+              SELECT mess_type, COUNT(*) as count 
+              FROM studentdetails WHERE category='Hostel' GROUP BY mess_type`;
+
+          // NEW Query 3: Student Breakdown by Block
+          const sqlBlock = `
+              SELECT block, COUNT(*) as count 
+              FROM studentdetails WHERE category='Hostel' GROUP BY block ORDER BY block ASC`;
+          
+          // Query 4: Breakdown by Academic Year
+          const sqlYear = `
+              SELECT year, COUNT(*) as count 
+              FROM studentdetails WHERE category='Hostel' GROUP BY year ORDER BY year ASC`;
+
+
+          // Execute all queries in sequence
+          connection.query(sqlAttendance, (err, resAttendance) => {
+              if(err) { connection.release(); console.error(err); return res.status(500).send("DB Error"); }
+              
+              connection.query(sqlMess, (err, resMess) => {
+                  if(err) { connection.release(); console.error(err); return res.status(500).send("DB Error"); }
+
+                  connection.query(sqlBlock, (err, resBlock) => {
+                      if(err) { connection.release(); console.error(err); return res.status(500).send("DB Error"); }
+
+                      connection.query(sqlYear, (err, resYear) => {
+                          connection.release();
+                          if(err) { console.error(err); return res.status(500).send("DB Error"); }
+
+                          const stats = {
+                              attendance: resAttendance[0],
+                              mess: resMess,
+                              block: resBlock, // NEW DATA
+                              year: resYear
+                          };
+
+                          res.render(__dirname + '/views/analytics', { 
+                              stats: stats, 
+                              role: role, 
+                              message: req.flash('message') 
+                          });
+                      });
+                  });
+              });
+          });
+      });
+  } catch (err) {
+      console.error("Auth/Token Error:", err);
+      res.redirect('/loginpanel');
+  }
+});
+
+
+
+
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Server running on port ", PORT);
