@@ -28,7 +28,7 @@
    
     function fetchAndDrawlineChart() {
       // Fetch data from Node.js server
-      fetch('http://gate.svpcet.in/datatimelines')
+      fetch('/datatimelines')
         .then(response => response.json())
         .then(data => drawBackgroundColor(data))
         .catch(error => console.error('Error fetching data:', error));
@@ -38,7 +38,7 @@
 
     function fetchAndDrawChart() {
       // Fetch data from Node.js server
-      fetch('http://gate.svpcet.in/datastatus')
+      fetch('/datastatus')
         .then(response => response.json())
         .then(data => drawChart(data))
         .catch(error => console.error('Error fetching data:', error));

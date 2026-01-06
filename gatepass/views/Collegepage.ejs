@@ -27,7 +27,7 @@
             });
 
             function handleBarcode(scanned_barcode) {
-                location.href = "http://gate.svpcet.in/codescanner1/"+scanned_barcode;
+                location.href = "/codescanner1/"+scanned_barcode;
             }
 
             function showdiv()
@@ -39,7 +39,7 @@
             function manualenter()
             {
                 var UID=document.getElementById("inp").value;
-               // location.href = "http://gate.svpcet.in/codescanner/"+UID;
+               // location.href = "/codescanner/"+UID;
                location.href = "http://localhost:4000/codescanner1/"+UID;
             }
     </script>

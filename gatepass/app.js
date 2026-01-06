@@ -819,6 +819,10 @@ app.get('/token/:uid', verifyjwt, function (req, res) {
 
         connection.query(sql, function (err, result) {
           if (err) throw err;
+          if (!result || result.length === 0) {
+            req.flash('message', 'Student not found or no data available.');
+            return res.redirect('/tokenhomepage');
+          }
           else if (result[0].status == 'Restrict') {
             req.flash('message', 'Your Id is Blocked, Please contact hostel admin');
             res.redirect('/tokenhomepage');

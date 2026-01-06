@@ -317,28 +317,32 @@
             <i class="fas fa-arrow-left"></i> Back to Dashboard
         </a>
         
+        <% if (result && result[0]) { %>
         <form action="/updatestudent/<%= result[0].uid%>" method="post">
             <div class="profile-card">
                 <!-- Profile Header -->
                 <div class="profile-card-header">
-                    <% if (result[0].path) { %>
+                    <% if (result && result[0] && result[0].path) { %>
                         <img src="<%= result[0].path%>" alt="Profile Photo">
                     <% } else { %>
                         <img src="/images/blank_profile.webp" alt="Default Avatar">
                     <% } %>
-                    <h2><%= result[0].sname%></h2>
+                    <h2><%= result[0].sname %></h2>
                     <div class="ctn">
-                         <span class="uid" style="margin-top: 1rem;"><i class="fas fa-id-badge"></i> <%= result[0].uid%></span>
+                         <span class="uid" style="margin-top: 1rem;"><i class="fas fa-id-badge"></i> <%= result[0].uid %></span>
                     <div style="margin-top: 15px;">
-                        <span class="status-indicator <%= result[0].status === 'Restrict' ? 'restricted' : 'active' %>">
-                            <i class="fas <%= result[0].status === 'Restrict' ? 'fa-ban' : 'fa-check-circle' %>"></i>
-                            <%= result[0].status === 'Restrict' ? 'Restricted' : 'Active' %>
+                        <span class="status-indicator <%= (result && result[0] && result[0].status === 'Restrict') ? 'restricted' : 'active' %>">
+                            <i class="fas <%= (result && result[0] && result[0].status === 'Restrict') ? 'fa-ban' : 'fa-check-circle' %>"></i>
+                            <%= (result && result[0] && result[0].status === 'Restrict') ? 'Restricted' : 'Active' %>
                         </span>
                     </div>
                     </div>
                    
                 </div>
-                
+                </form>
+                <% } else { %>
+                    <p>No student data available.</p>
+                <% } %>
                 <!-- Profile Body -->
                 <div class="profile-card-body">
                     <!-- Academic Information -->
@@ -347,8 +351,10 @@
                         <div class="form-grid">
                             <div class="form-group">
                                 <label>Department</label>
-                                <select id="dropdownlist2" required name="Department" disabled>
-                                    <option value="<%= result[0].dept %>" selected hidden><%= result[0].dept %></option>
+                                 <select id="dropdownlist2" required name="Department" disabled>
+                                     <% if (result && result[0]) { %>
+                                     <option value="<%= result[0].dept %>" selected hidden><%= result[0].dept %></option>
+                                     <% } %>
                                     <option value="Mechanical Engineering">Mechanical Engineering</option>
                                     <option value="Basic science and humanities">Basic science and humanities</option>
                                     <option value="Computer Engineering">Computer Engineering</option>

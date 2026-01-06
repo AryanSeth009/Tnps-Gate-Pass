@@ -28,7 +28,7 @@
     });
 
     function handleBarcode(scanned_barcode) {
-      location.href = "http://gate.svpcet.in/token/" + scanned_barcode;
+      location.href = "/token/" + scanned_barcode;
 
     }
 
@@ -43,7 +43,7 @@
 
     function manualenter() {
       var UID = document.getElementById("inp").value;
-      location.href = "http://gate.svpcet.in/token/" + UID;
+      location.href = "/token/" + UID;
     }
   </script>
 </head>
