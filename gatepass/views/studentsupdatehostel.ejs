@@ -63,6 +63,26 @@
       </div>
       <% } %>
     </center>
+  </div><br>
+
+  <!-- Excel Upload Form -->
+  <div class="container">
+    <div class="row justify-content-center">
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-body">
+            <h5 class="card-title">Import Hostel Students from Excel</h5>
+            <form action="/import-excel-hostel" enctype="multipart/form-data" method="post">
+              <div class="mb-3">
+                <label for="fileInput" class="form-label">Select Excel File (.xlsx)</label>
+                <input type="file" name="import-excel" id="fileInput" class="form-control" accept=".xlsx, .xls" required />
+              </div>
+              <button type="submit" class="btn btn-primary">Upload</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
   </div><br><br>
 
   <div class="container">
