@@ -13,6 +13,7 @@ var cookieParser = require('cookie-parser');
 var flash = require('connect-flash');
 const uploadFile = require("./uploader");
 const readXlsxFile = require('read-excel-file/node');
+const XLSX = require('xlsx');
 const { time } = require('console');
 const nodemailer = require('nodemailer');
 const ejs = require('ejs');
@@ -1410,52 +1411,18 @@ app.get('/studentsupdatehostel/:role', verifyjwt, function (req, res) {
 
   var role = req.params.role;
   dbbconnection.getConnection(function (err, connection) {
-    if (role == "BoysHostelAdmin") {
+    // Get all hostel students regardless of gender
+    var sql = "select * from studentdetails where category='Hostel' order by sname";
 
-
-      var sql = "select * from studentdetails where gender='MALE' and category='Hostel'";
-
-      connection.query(sql, function (err, result) {
-        if (err) throw err;
-        else {
-
-          res.render(__dirname + '/views/studentsupdatehostel', { result: result, message: req.flash('message') });
-        }
-      });
-    }
-    else if (role == "GirlsHostelAdmin") {
-
-
-      var sql = "select * from studentdetails where gender='FEMALE' and category='Hostel'";
-      connection.query(sql, function (err, result) {
-        if (err) throw err;
-        else {
-          res.render(__dirname + '/views/studentsupdatehostel', { result: result, message: req.flash('message') });
-        }
-      });
-    }
-    else if (role == "SuperID") {
-      var datefrom = req.body.datefrom;
-      var dateto = req.body.dateto;
-
-      var sql = "select * from studentdetails where category='Hostel'";
-      connection.query(sql, function (err, result) {
-        if (err) throw err;
-        else {
-          res.render(__dirname + '/views/studentsupdatehostel', { result: result, message: req.flash('message') });
-        }
-      });
-    }
-    else {
-      req.flash('message', 'Unauthorised Access');
-      res.redirect('/loginpanel');
-    }
-
-    connection.release();
+    connection.query(sql, function (err, result) {
+      connection.release();
+      if (err) {
+        console.error('Database error:', err);
+        return res.render(__dirname + '/views/studentsupdatehostel', { result: [], message: 'Database error: ' + err.message });
+      }
+      res.render(__dirname + '/views/studentsupdatehostel', { result: result, message: req.flash('message') });
+    });
   });
-
-
-
 });
 
 app.get('/studentsupdate', verifyjwt, function (req, res) {
@@ -2632,8 +2599,46 @@ app.post('/import-excel', uploadFile.single('import-excel'), async function (req
     }
 
     try {
-        const rows = await readXlsxFile(req.file.path);
-        rows.shift(); // Remove headers
+        // Read Excel file using xlsx library
+        const workbook = XLSX.readFile(req.file.path);
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(worksheet);
+
+        if (rows.length === 0) {
+            req.flash('message', 'Error: Excel file is empty.');
+            return res.redirect('/studentsupdate');
+        }
+
+        // Helper function to truncate strings to max length
+        const truncate = (str, maxLen) => {
+            if (!str) return '';
+            const s = String(str).trim();
+            return s.length > maxLen ? s.substring(0, maxLen) : s;
+        };
+
+        // Convert to array format for database insertion with data sanitization
+        const dataForDB = rows.map(row => [
+            truncate(row.uid, 50),
+            truncate(row.sname, 100),
+            truncate(row.email, 100),
+            truncate(row.dept, 100),
+            truncate(row.address, 255),
+            truncate(row.year, 50),
+            truncate(row.category, 50),
+            truncate(row.gender, 20),
+            truncate(row.mobileno, 20),
+            truncate(row.dob, 20),
+            truncate(row.academicyear, 50),
+            truncate(row.path, 255),
+            truncate(row.status, 50),
+            truncate(row.parentname, 100),
+            truncate(row.parentnumber, 20),
+            truncate(row.room_no, 100),
+            truncate(row.bed_no, 100),
+            truncate(row.other1, 500),
+            truncate(row.other2, 500),
+            truncate(row.other3, 500)
+        ]);
 
         dbbconnection.getConnection((error, connection) => {
             if (error) throw error;
@@ -2647,23 +2652,115 @@ app.post('/import-excel', uploadFile.single('import-excel'), async function (req
                 room_no=VALUES(room_no),
                 bed_no=VALUES(bed_no)`;
 
-            connection.query(sql, [rows], (error, response) => {
+            connection.query(sql, [dataForDB], (error, response) => {
                 connection.release();
                 if (error) {
                     console.error("Excel Import Error:", error);
-                    req.flash('message', 'Error: Ensure Excel has exactly 20 columns.');
+                    req.flash('message', 'Error importing data: ' + error.message);
                     return res.redirect('/studentsupdate');
                 }
-                req.flash('message', 'Students Imported and Allocated Successfully');
+                req.flash('message', `Students Imported Successfully (${rows.length} records)`);
                 res.redirect('/studentsupdate');
             });
         });
     } catch (err) {
         console.error("Excel Parsing Error:", err);
-        req.flash('message', 'Error reading Excel file.');
+        req.flash('message', 'Error reading Excel file: ' + err.message);
         res.redirect('/studentsupdate');
     }
 });
+
+// Hostel-specific Excel Import Route
+app.post('/import-excel-hostel', uploadFile.single('import-excel'), async function (req, res) {
+    const tokenadmin = req.cookies.jwt;
+    const decode = jwt.verify(tokenadmin, secretkey);
+    const role = decode.role;
+
+    // Verify hostel admin role
+    if (role !== "BoysHostelAdmin" && role !== "GirlsHostelAdmin" && role !== "SuperID") {
+        req.flash('message', 'Unauthorized Access');
+        return res.redirect('/studentsupdatehostel/' + role);
+    }
+
+    if (!req.file) {
+        req.flash('message', 'Error: No file selected.');
+        return res.redirect('/studentsupdatehostel/' + role);
+    }
+
+    try {
+        // Read Excel file using xlsx library
+        const workbook = XLSX.readFile(req.file.path);
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(worksheet);
+
+        if (rows.length === 0) {
+            req.flash('message', 'Error: Excel file is empty.');
+            return res.redirect('/studentsupdatehostel/' + role);
+        }
+
+        // Helper function to truncate strings to max length
+        const truncate = (str, maxLen) => {
+            if (!str) return '';
+            const s = String(str).trim();
+            return s.length > maxLen ? s.substring(0, maxLen) : s;
+        };
+
+        // Convert to array format for database insertion with data sanitization
+        // Excel columns: uid, sname, email, dept, year, category, gender, mobileno, parentnumber, mess_type, religion, hostel_fee_status, block, floor, room_no, bed_no
+        // DB columns: uid, sname, email, dept, address, year, category, gender, mobileno, dob, academicyear, path, status, parentname, parentnumber, room_no, bed_no, other1, other2, other3
+        const dataForDB = rows.map((row, idx) => [
+            truncate(row.uid, 50),
+            truncate(row.sname, 100),
+            truncate(row.email, 100),
+            truncate(row.dept, 100),
+            '', // address - not in Excel
+            truncate(row.year, 50),
+            'Hostel', // force category to Hostel
+            truncate(row.gender, 20),
+            truncate(row.mobileno, 20),
+            '', // dob - not in Excel
+            '', // academicyear - not in Excel
+            '', // path - not in Excel
+            'active', // status - default to active
+            '', // parentname - not in Excel
+            truncate(row.parentnumber, 20),
+            truncate(row.room_no, 100),
+            truncate(row.bed_no, 100),
+            truncate(row.religion, 100), // religion in other1
+            truncate(row.block, 100), // block in other2
+            truncate(row.floor, 100) // floor in other3
+        ]);
+
+        dbbconnection.getConnection((error, connection) => {
+            if (error) throw error;
+
+            // SQL for hostel student import with 20 columns
+            let sql = `INSERT INTO studentdetails 
+                (uid, sname, email, dept, address, year, category, gender, mobileno, dob, academicyear, path, status, parentname, parentnumber, room_no, bed_no, other1, other2, other3) 
+                VALUES ? 
+                ON DUPLICATE KEY UPDATE 
+                category='Hostel',
+                room_no=VALUES(room_no),
+                bed_no=VALUES(bed_no)`;
+
+            connection.query(sql, [dataForDB], (error, response) => {
+                connection.release();
+                if (error) {
+                    console.error("Excel Import Error:", error);
+                    req.flash('message', 'Error importing data: ' + error.message);
+                    return res.redirect('/studentsupdatehostel/' + role);
+                }
+                req.flash('message', `Hostel Students Imported Successfully (${rows.length} records)`);
+                res.redirect('/studentsupdatehostel/' + role);
+            });
+        });
+    } catch (err) {
+        console.error("Excel Parsing Error:", err);
+        req.flash('message', 'Error reading Excel file: ' + err.message);
+        res.redirect('/studentsupdatehostel/' + role);
+    }
+});
+
 // ---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 //date range for Gate out Students
 
