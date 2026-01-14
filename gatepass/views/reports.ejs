@@ -124,9 +124,10 @@
             <th scope="col">Total Students</th>
             <th scope="col">Gate Out</th>
             <th scope="col">Hostel Out</th>
+            <th scope="col">Veg Out</th>
+            <th scope="col">Non‑Veg Out</th>
             <th scope="col">City Pass</th>
             <th scope="col">Home Pass</th>
-            
           </tr>
         </thead>
         <tbody>
@@ -134,6 +135,8 @@
            <td data-label="Total Students"><%- result.totalStudents %></td>
            <td data-label="Gate Out"><%-result.gateOut %></td>
            <td data-label="Hostel Out"><%-result.hostelOut %></td>
+           <td data-label="Veg Out"><%- (result.vegOut != null ? result.vegOut : 0) %></td>
+           <td data-label="Non-Veg Out"><%- (result.nonVegOut != null ? result.nonVegOut : 0) %></td>
            <td data-label="City Pass"><%-result.citypass %></td>
            <td data-label="Home Pass"><%-result.homepass %></td>
           </tr>
