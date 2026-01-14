@@ -50,5 +50,32 @@
             </div>
         </div>
     </div>
+    
+     <script>
+                const backgroundImages = [
+                    '/loginimages/1.jpg',
+                    '/loginimages/2.jpg',
+                    '/loginimages/3.jpg',
+                    '/loginimages/4.jpg',
+                    '/loginimages/5.jpg',
+                    '/loginimages/6.jpg',
+                    '/loginimages/7.jpg'
+
+                ];
+
+                let currentImageIndex = 0;
+
+                function changeBackground() {
+                    document.body.style.backgroundImage = `url('${backgroundImages[currentImageIndex]}')`;
+                    currentImageIndex = (currentImageIndex + 1) % backgroundImages.length;
+                }
+
+                // Set initial background
+                changeBackground();
+
+                // Change background every 5 seconds
+                setInterval(changeBackground, 5000);
+            </script>
 </body>
+
 </html>
