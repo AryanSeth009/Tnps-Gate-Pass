@@ -127,14 +127,22 @@
                         <i class="fas fa-door-open"></i> Pass Active
                     </div>
                     <div class="pass-details">
-                        <div class="pass-detail-item">
-                            <label>Approved On</label>
-                            <span><%= activePass.approvaldt || 'N/A' %></span>
-                        </div>
-                        <div class="pass-detail-item">
-                            <label>Gate Out</label>
-                            <span><%= activePass.outdatetime || 'Pending' %></span>
-                        </div>
+                                                <div class="pass-detail-item">
+                                                        <label>Approved On</label>
+                                                        <% if(activePass && activePass.approvaldt){ %>
+                                                            <span class="dt-format" data-date="<%= activePass.approvaldt %>" data-date-only="true"></span>
+                                                        <% } else { %>
+                                                            <span>N/A</span>
+                                                        <% } %>
+                                                </div>
+                                                <div class="pass-detail-item">
+                                                        <label>Gate Out</label>
+                                                        <% if(activePass && activePass.outdatetime){ %>
+                                                            <span class="dt-format" data-date="<%= activePass.outdatetime %>"></span>
+                                                        <% } else { %>
+                                                            <span>Pending</span>
+                                                        <% } %>
+                                                </div>
                     </div>
                 </div>
             </div>
@@ -249,9 +257,27 @@
                             <tr>
                                 <td>#<%= req.requestid %></td>
                                 <td><%= req.passtype %></td>
-                                <td><%= req.created_at %></td>
-                                <td><%= req.expected_out %></td>
-                                <td><%= req.expected_return %></td>
+                                                                <td>
+                                                                    <% if(req.created_at){ %>
+                                                                        <span class="dt-format" data-date="<%= req.created_at %>"></span>
+                                                                    <% } else { %>
+                                                                        <span>N/A</span>
+                                                                    <% } %>
+                                                                </td>
+                                                                <td>
+                                                                    <% if(req.expected_out){ %>
+                                                                        <span class="dt-format" data-date="<%= req.expected_out %>"></span>
+                                                                    <% } else { %>
+                                                                        <span>N/A</span>
+                                                                    <% } %>
+                                                                </td>
+                                                                <td>
+                                                                    <% if(req.expected_return){ %>
+                                                                        <span class="dt-format" data-date="<%= req.expected_return %>"></span>
+                                                                    <% } else { %>
+                                                                        <span>N/A</span>
+                                                                    <% } %>
+                                                                </td>
                                 <td>
                                     <span class="status-badge pending">
                                         <i class="fas fa-clock"></i> Pending
@@ -264,6 +290,108 @@
                                         <i class="fas fa-times"></i> Cancel
                                     </a>
                                 </td>
+                            </tr>
+                        <% }); %>
+                    </tbody>
+                </table>
+            </div>
+        <% } %>
+        
+        <!-- Approved Requests -->
+        <% if(approvedRequests && approvedRequests.length > 0) { %>
+            <div class="content-section">
+                <div class="section-header">
+                    <h2 style="color: rgb(0, 157, 0);"><i class="fas fa-check-circle"></i> Approved Requests</h2>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Request ID</th>
+                            <th>Pass Type</th>
+                            <th>Approved On</th>
+                            <th>Expected Out</th>
+                            <th>Expected Return</th>
+                            <th>Approved By</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% approvedRequests.forEach(function(req) { %>
+                            <tr>
+                                <td>#<%= req.requestid %></td>
+                                <td><%= req.passtype %></td>
+                                                                <td>
+                                                                    <% if(req.approved_at || req.approvaldt){ %>
+                                                                        <span class="dt-format" data-date="<%= req.approved_at || req.approvaldt %>" data-date-only="true"></span>
+                                                                    <% } else { %>
+                                                                        <span>N/A</span>
+                                                                    <% } %>
+                                                                </td>
+                                                                <td>
+                                                                    <% if(req.expected_out){ %>
+                                                                        <span class="dt-format" data-date="<%= req.expected_out %>"></span>
+                                                                    <% } else { %>
+                                                                        <span>N/A</span>
+                                                                    <% } %>
+                                                                </td>
+                                                                <td>
+                                                                    <% if(req.expected_return){ %>
+                                                                        <span class="dt-format" data-date="<%= req.expected_return %>"></span>
+                                                                    <% } else { %>
+                                                                        <span>N/A</span>
+                                                                    <% } %>
+                                                                </td>
+                                <td><%= req.approved_by || '-' %></td>
+                            </tr>
+                        <% }); %>
+                    </tbody>
+                </table>
+            </div>
+        <% } %>
+
+        <!-- Rejected Requests -->
+        <% if(rejectedRequests && rejectedRequests.length > 0) { %>
+            <div class="content-section">
+                <div class="section-header">
+                    <h2><i class="fas fa-times-circle"></i> Rejected Requests</h2>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Request ID</th>
+                            <th>Pass Type</th>
+                            <th>Rejected On</th>
+                            <th>Expected Out</th>
+                            <th>Expected Return</th>
+                            <th>Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% rejectedRequests.forEach(function(req) { %>
+                            <tr>
+                                <td>#<%= req.requestid %></td>
+                                <td><%= req.passtype %></td>
+                                                                <td>
+                                                                    <% if(req.approved_at || req.approvaldt){ %>
+                                                                        <span class="dt-format" data-date="<%= req.approved_at || req.approvaldt %>"></span>
+                                                                    <% } else { %>
+                                                                        <span>N/A</span>
+                                                                    <% } %>
+                                                                </td>
+                                                                <td>
+                                                                    <% if(req.expected_out){ %>
+                                                                        <span class="dt-format" data-date="<%= req.expected_out %>"></span>
+                                                                    <% } else { %>
+                                                                        <span>N/A</span>
+                                                                    <% } %>
+                                                                </td>
+                                                                <td>
+                                                                    <% if(req.expected_return){ %>
+                                                                        <span class="dt-format" data-date="<%= req.expected_return %>"></span>
+                                                                    <% } else { %>
+                                                                        <span>N/A</span>
+                                                                    <% } %>
+                                                                </td>
+                                <td><%= req.rejection_reason || '-' %></td>
                             </tr>
                         <% }); %>
                     </tbody>
@@ -308,5 +436,34 @@
             document.body.style.overflow = document.querySelector('.sidebar').classList.contains('active') ? 'hidden' : '';
         }
     </script>
+        <script>
+            // Format all elements with class 'dt-format'; support date-only via data-date-only
+            (function(){
+                function formatDateString(s, dateOnly) {
+                    try {
+                        var d = new Date(s);
+                        if (isNaN(d.getTime())) return s;
+                        if (dateOnly) {
+                            var opts = { year: 'numeric', month: 'short', day: 'numeric' };
+                            return d.toLocaleDateString(undefined, opts);
+                        }
+                        var opts = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true };
+                        return d.toLocaleString(undefined, opts);
+                    } catch (e) {
+                        return s;
+                    }
+                }
+
+                document.addEventListener('DOMContentLoaded', function(){
+                    var els = document.querySelectorAll('.dt-format');
+                    els.forEach(function(el){
+                        var s = el.getAttribute('data-date');
+                        if (!s) return;
+                        var dateOnly = el.getAttribute('data-date-only') === 'true';
+                        el.textContent = formatDateString(s, dateOnly);
+                    });
+                });
+            })();
+        </script>
 </body>
 </html>

@@ -3997,16 +3997,76 @@ app.get('/student/requestpass', verifyStudentJwt, function (req, res) {
       // Check for active pass
       var activeSql = "SELECT * FROM log_details1 WHERE uid = ? AND status = 'ACTIVE' ORDER BY logid DESC LIMIT 1";
       connection.query(activeSql, [uid], function (err, activeResult) {
-        // Get pending requests
-        var pendingSql = "SELECT * FROM pass_requests WHERE uid = ? AND status = 'pending' ORDER BY created_at DESC";
-        connection.query(pendingSql, [uid], function (err, pendingResult) {
+        if (err) {
           connection.release();
+          req.flash('message', 'Database error');
+          return res.redirect('/student/dashboard');
+        }
 
-          res.render(__dirname + '/views/student_requestpass', {
-            student: student,
-            activePass: activeResult.length > 0 ? activeResult[0] : null,
-            pendingRequests: pendingResult || [],
-            message: req.flash('message')
+        // Get pending, approved and rejected requests
+        var pendingSql = "SELECT * FROM pass_requests WHERE uid = ? AND status = 'pending' ORDER BY created_at DESC";
+        var approvedSql = "SELECT * FROM pass_requests WHERE uid = ? AND status = 'approved' ORDER BY approved_at DESC";
+        var rejectedSql = "SELECT * FROM pass_requests WHERE uid = ? AND status = 'rejected' ORDER BY approved_at DESC";
+
+        connection.query(pendingSql, [uid], function (err, pendingResult) {
+          if (err) {
+            connection.release();
+            req.flash('message', 'Database error');
+            return res.redirect('/student/dashboard');
+          }
+
+          connection.query(approvedSql, [uid], function (err, approvedResult) {
+            if (err) {
+              connection.release();
+              req.flash('message', 'Database error');
+              return res.redirect('/student/dashboard');
+            }
+
+            connection.query(rejectedSql, [uid], function (err, rejectedResult) {
+              connection.release();
+              if (err) {
+                req.flash('message', 'Database error');
+                return res.redirect('/student/dashboard');
+              }
+
+              // Normalize date fields to ISO strings so client-side formatting is consistent
+              function toISO(val){
+                if (!val) return val;
+                if (val instanceof Date) return val.toISOString();
+                var d = new Date(val);
+                return isNaN(d.getTime()) ? val : d.toISOString();
+              }
+
+              function normalizeRows(rows){
+                if (!Array.isArray(rows)) return rows;
+                rows.forEach(function(r){
+                  ['created_at','expected_out','expected_return','approved_at','approvaldt','outdatetime','indatetime'].forEach(function(f){
+                    if (r[f]) r[f] = toISO(r[f]);
+                  });
+                });
+                return rows;
+              }
+
+              // Normalize active pass dates
+              var activePass = null;
+              if (activeResult && activeResult.length > 0) {
+                activePass = activeResult[0];
+                ['approvaldt','outdatetime','indatetime'].forEach(function(f){ if (activePass[f]) activePass[f] = toISO(activePass[f]); });
+              }
+
+              pendingResult = normalizeRows(pendingResult || []);
+              approvedResult = normalizeRows(approvedResult || []);
+              rejectedResult = normalizeRows(rejectedResult || []);
+
+              res.render(__dirname + '/views/student_requestpass', {
+                student: student,
+                activePass: activePass,
+                pendingRequests: pendingResult,
+                approvedRequests: approvedResult,
+                rejectedRequests: rejectedResult,
+                message: req.flash('message')
+              });
+            });
           });
         });
       });
@@ -4264,7 +4324,7 @@ app.post('/admin/approverequest/:id', verifyjwt, function (req, res) {
 
         const request = requestResult[0];
 
-        // Update request status
+        // Update request status to approved
         var updateSql = "UPDATE pass_requests SET status = 'approved', approved_by = ?, approved_at = NOW() WHERE requestid = ?";
         connection.query(updateSql, [adminName, requestId], function (err, updateResult) {
           if (err) {
@@ -4273,23 +4333,17 @@ app.post('/admin/approverequest/:id', verifyjwt, function (req, res) {
             return res.redirect('/admin/passrequests');
           }
 
-          // Create the actual pass in log_details1
-          var createPassSql = `
-            INSERT INTO log_details1 (uid, status, approvaldt, passtype, hosteloutauth) 
-            VALUES (?, 'ACTIVE', NOW(), ?, ?)`;
           
-          connection.query(createPassSql, [request.uid, request.passtype, adminName], function (err, passResult) {
-            // Add notification for student
-            var notifSql = `
-              INSERT INTO student_notifications (uid, type, title, message, created_at) 
-              VALUES (?, 'pass_approved', 'Pass Request Approved', ?, NOW())`;
-            var notifMsg = `Your ${request.passtype} request has been approved by ${adminName}. Please collect your pass from the hostel office.`;
-            
-            connection.query(notifSql, [request.uid, notifMsg], function (err, notifResult) {
-              connection.release();
-              req.flash('message', 'Pass request approved and pass generated successfully');
-              res.redirect('/admin/passrequests');
-            });
+          // Approval only: do NOT create log_details1 entry here. Student must scan UID to complete hostel check-out.
+          var notifSql = `
+            INSERT INTO student_notifications (uid, type, title, message, created_at) 
+            VALUES (?, 'pass_approved', 'Pass Request Approved', ?, NOW())`;
+          var notifMsg = `Your ${request.passtype} request has been approved by ${adminName}. Please present your UID at the gate to complete hostel check-out.`;
+
+          connection.query(notifSql, [request.uid, notifMsg], function (err, notifResult) {
+            connection.release();
+            req.flash('message', 'Pass request approved; student must scan UID to complete hostel check-out');
+            return res.redirect('/admin/passrequests');
           });
         });
       });
