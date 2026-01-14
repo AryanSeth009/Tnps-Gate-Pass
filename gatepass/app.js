@@ -258,7 +258,7 @@ app.get('/hostelouttoday', verifyjwt, function (req, res) {
     role = decode.role;
     if (role == "SuperID" || role == "Hostelauthority" || role == "BoysHostelAdmin" || role == "GirlsHostelAdmin") {
       dbbconnection.getConnection(function (err, connection) {
-        var sql1 = "select log.logid,stu.uid,stu.sname,stu.mobileno,log.approvaldt,log.passtype from log_details1 as log join studentdetails as stu where stu.uid=log.uid and log.hostelintime is null and category='Hostel' ORDER BY log.logid desc";
+        var sql1 = "select log.logid,stu.uid,stu.sname,stu.mobileno,stu.room_no,stu.mess_type,log.approvaldt,log.passtype from log_details1 as log join studentdetails as stu where stu.uid=log.uid and log.hostelintime is null and category='Hostel' ORDER BY log.logid desc";
         connection.query(sql1, function (err, result) {
           if (err) throw err;
           else {
@@ -411,8 +411,30 @@ app.get('/reports', verifyjwt, function (req, res) {
                       return;
                     }
                     result.homepass = homepass[0].homepass;
-                    // Render the EJS template with the results
-                    res.render(__dirname + '/views/reports', { result: result, message: req.flash('message') });
+                    // Count Veg / Non-Veg hostel outs (use COALESCE to handle alternate fields)
+                    var sqlVeg = "select count(*) as vegout from log_details1 log join studentdetails stu on stu.uid=log.uid where log.hostelintime is null and stu.category='Hostel' and LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%veg%' and LOWER(COALESCE(stu.mess_type,stu.other1,'')) NOT LIKE '%non%'";
+                    var sqlNon = "select count(*) as nonvegout from log_details1 log join studentdetails stu on stu.uid=log.uid where log.hostelintime is null and stu.category='Hostel' and (LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%non%' OR LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%non-veg%' OR LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%nonveg%')";
+
+                    connection.query(sqlVeg, function (err, vegResult) {
+                      if (err) {
+                        console.error(err);
+                        res.status(500).send('Error executing veg count');
+                        return;
+                      }
+                      result.vegOut = vegResult[0].vegout;
+
+                      connection.query(sqlNon, function (err, nonResult) {
+                        connection.release();
+                        if (err) {
+                          console.error(err);
+                          res.status(500).send('Error executing non-veg count');
+                          return;
+                        }
+                        result.nonVegOut = nonResult[0].nonvegout;
+                        // Render the EJS template with the results
+                        res.render(__dirname + '/views/reports', { result: result, message: req.flash('message') });
+                      });
+                    });
                   })
                 });
               });
@@ -476,8 +498,30 @@ app.get('/reports', verifyjwt, function (req, res) {
                       return;
                     }
                     result.homepass = homepass[0].homepass;
-                    // Render the EJS template with the results
-                    res.render(__dirname + '/views/reports', { result: result, message: req.flash('message') });
+                    // Count Veg / Non-Veg hostel outs for MALE
+                    var sqlVegMale = "select count(*) as vegout from log_details1 log join studentdetails stu on stu.uid=log.uid where log.hostelintime is null and stu.category='Hostel' and stu.gender='MALE' and LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%veg%' and LOWER(COALESCE(stu.mess_type,stu.other1,'')) NOT LIKE '%non%'";
+                    var sqlNonMale = "select count(*) as nonvegout from log_details1 log join studentdetails stu on stu.uid=log.uid where log.hostelintime is null and stu.category='Hostel' and stu.gender='MALE' and (LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%non%' OR LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%non-veg%' OR LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%nonveg%')";
+
+                    connection.query(sqlVegMale, function (err, vegResult) {
+                      if (err) {
+                        console.error(err);
+                        res.status(500).send('Error executing veg count');
+                        return;
+                      }
+                      result.vegOut = vegResult[0].vegout;
+
+                      connection.query(sqlNonMale, function (err, nonResult) {
+                        connection.release();
+                        if (err) {
+                          console.error(err);
+                          res.status(500).send('Error executing non-veg count');
+                          return;
+                        }
+                        result.nonVegOut = nonResult[0].nonvegout;
+                        // Render the EJS template with the results
+                        res.render(__dirname + '/views/reports', { result: result, message: req.flash('message') });
+                      });
+                    });
                   })
                 });
               });
@@ -541,8 +585,30 @@ app.get('/reports', verifyjwt, function (req, res) {
                       return;
                     }
                     result.homepass = homepass[0].homepass;
-                    // Render the EJS template with the results
-                    res.render(__dirname + '/views/reports', { result: result, message: req.flash('message') });
+                    // Count Veg / Non-Veg hostel outs for FEMALE
+                    var sqlVegFemale = "select count(*) as vegout from log_details1 log join studentdetails stu on stu.uid=log.uid where log.hostelintime is null and stu.category='Hostel' and stu.gender='FEMALE' and LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%veg%' and LOWER(COALESCE(stu.mess_type,stu.other1,'')) NOT LIKE '%non%'";
+                    var sqlNonFemale = "select count(*) as nonvegout from log_details1 log join studentdetails stu on stu.uid=log.uid where log.hostelintime is null and stu.category='Hostel' and stu.gender='FEMALE' and (LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%non%' OR LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%non-veg%' OR LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%nonveg%')";
+
+                    connection.query(sqlVegFemale, function (err, vegResult) {
+                      if (err) {
+                        console.error(err);
+                        res.status(500).send('Error executing veg count');
+                        return;
+                      }
+                      result.vegOut = vegResult[0].vegout;
+
+                      connection.query(sqlNonFemale, function (err, nonResult) {
+                        connection.release();
+                        if (err) {
+                          console.error(err);
+                          res.status(500).send('Error executing non-veg count');
+                          return;
+                        }
+                        result.nonVegOut = nonResult[0].nonvegout;
+                        // Render the EJS template with the results
+                        res.render(__dirname + '/views/reports', { result: result, message: req.flash('message') });
+                      });
+                    });
                   })
                 });
               });

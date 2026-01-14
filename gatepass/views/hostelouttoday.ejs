@@ -134,6 +134,8 @@ function passfilter(value)
             <th scope="col">UID</th>
             <th scope="col">NAME</th>
             <th scope="col">Mobile no</th>
+            <!-- <th scope="col">Room No</th> -->
+            <!-- <th scope="col">Mess Type</th> -->
             <th scope="col">Hostel Out</th>
           </tr>
         </thead>
@@ -148,6 +150,8 @@ function passfilter(value)
                   <td><%-result[i].uid%></a></td>
                   <td><%- result[i].sname%></td>
                   <td><%- result[i].mobileno%></td>
+                  <!-- <td><%- result[i].room_no || result[i].room || 'N/A' %></td> -->
+                  <!-- <td><%- result[i].mess_type || result[i].other1 || 'N/A' %></td> -->
                   <td class="approvalDate"><%- result[i].approvaldt%></td>
                     
                     
