@@ -757,8 +757,10 @@ body {
 }
 
 @media (max-width: 768px) {
+    /* Keep sidebar present but off-screen so it can slide in when active */
     .sidebar {
-        display: none;
+        display: block;
+        transform: translateX(-100%);
     }
     
     .main-content {
@@ -1002,6 +1004,9 @@ body {
     .menu-toggle {
         display: flex;
     }
+     .stu-name, .name, .role{
+        display: block;
+    }
     
     .sidebar-close {
         display: flex;
@@ -1101,8 +1106,10 @@ body {
     .sidebar .logo h2 {
         color: #fff !important;
         font-size: 18px;
+        display: block;
     }
-    
+
+   
     /* User info positioning for mobile */
     .sidebar .user-info {
         position: relative;

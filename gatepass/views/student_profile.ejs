@@ -69,7 +69,7 @@
         <div class="user-info">
             <div class="user-detail">
                 <img src="<%= student.path || '/images/default-avatar.png' %>" alt="Profile">
-                <div>
+                <div class="stu-name">
                     <div class="name"><%= student.sname %></div>
                     <div class="role"><%= student.uid %></div>
                 </div>
@@ -238,6 +238,58 @@
             </div>
         </div>
         
+        <!-- Hostel Information -->
+        <% 
+            // Determine mess type from possible DB fields without changing server code
+            const rawMess = student.mess_type || student.messtype || student.mess || student.messType || null;
+            let messDisplay = 'N/A';
+            if (rawMess) {
+                const m = ('' + rawMess).toLowerCase();
+                if (m.includes('veg') && !m.includes('non')) messDisplay = 'Veg';
+                else if (m.includes('non') || m.includes('non-veg') || m.includes('nonveg')) messDisplay = 'Non‑Veg';
+                else messDisplay = rawMess;
+            }
+            const hostelName = student.hostel || student.hostel_name || student.roomblock || 'N/A';
+            const roomNo = student.room_no || student.room || student.rno || 'N/A';
+            const bedNo = student.bed_no || student.bed || 'N/A';
+        %>
+        <div class="content-section">
+            <div class="section-header">
+                <h2><i class="fas fa-bed"></i> Hostel Information</h2>
+            </div>
+
+            <div class="profile-grid">
+                <!-- <div class="profile-item">
+                    <div class="icon"><i class="fas fa-building"></i></div>
+                    <div class="details">
+                        <label>Hostel</label>
+                        <span><%= hostelName %></span>
+                    </div>
+                </div> -->
+                <div class="profile-item">
+                    <div class="icon"><i class="fas fa-door-closed"></i></div>
+                    <div class="details">
+                        <label>Room No</label>
+                        <span><%= roomNo %></span>
+                    </div>
+                </div>
+                <div class="profile-item">
+                    <div class="icon"><i class="fas fa-bed"></i></div>
+                    <div class="details">
+                        <label>Bed No</label>
+                        <span><%= bedNo %></span>
+                    </div>
+                </div>
+                <div class="profile-item">
+                    <div class="icon"><i class="fas fa-utensils"></i></div>
+                    <div class="details">
+                        <label>Mess Type</label>
+                        <span><%= messDisplay %></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Account Status -->
         <div class="content-section">
             <div class="section-header">
