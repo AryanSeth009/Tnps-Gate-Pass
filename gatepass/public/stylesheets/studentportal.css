@@ -663,7 +663,7 @@ body {
 .student-login-box .login-footer {
     text-align: center;
     margin-top: 20px;
-    color: #888;
+    /* color: #888; */
     font-size: 13px;
 }
 

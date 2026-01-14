@@ -7,6 +7,10 @@
     <link rel="stylesheet" href="/stylesheets/studentportal.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="icon" href="/images/4174.png">
+    <style>
+        /* Green pill for first approved-on cell */
+        .first-approved-on { background: #16a34a; color: #ffffff; padding: 4px 8px; border-radius: 4px; display: inline-block; }
+    </style>
 </head>
 <body>
     <!-- Mobile Menu Toggle -->
@@ -315,13 +319,13 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <% approvedRequests.forEach(function(req) { %>
+                        <% approvedRequests.forEach(function(req, idx) { %>
                             <tr>
                                 <td>#<%= req.requestid %></td>
                                 <td><%= req.passtype %></td>
                                                                 <td>
                                                                     <% if(req.approved_at || req.approvaldt){ %>
-                                                                        <span class="dt-format" data-date="<%= req.approved_at || req.approvaldt %>" data-date-only="true"></span>
+                                                                            <span class="dt-format <%= idx===0 ? 'first-approved-on' : '' %>" data-date="<%= req.approved_at || req.approvaldt %>" data-date-only="true"></span>
                                                                     <% } else { %>
                                                                         <span>N/A</span>
                                                                     <% } %>

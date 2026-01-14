@@ -7,6 +7,36 @@
     <link rel="stylesheet" href="/stylesheets/studentportal.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="icon" href="/images/4174.png">
+    <style>
+        /* Responsive full-bleed background for login page */
+        body {
+            background-size: cover !important;
+            background-position: center center !important;
+            background-repeat: no-repeat !important;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        /* Use fixed background on desktop for parallax feel; disable on small screens for performance */
+        @media (min-width: 769px) {
+            body { background-attachment: fixed; }
+        }
+        @media (max-width: 768px) {
+            body { background-attachment: scroll; -webkit-background-size: cover; background-size: cover; }
+        }
+
+        /* Ensure the login container sits above the background and centers vertically */
+        .student-login-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            z-index: 1;
+        }
+
+        .student-login-box { z-index: 2; position: relative; }
+    </style>
 </head>
 <body>
     <div class="student-login-container">
