@@ -258,7 +258,7 @@ app.get('/hostelouttoday', verifyjwt, function (req, res) {
     role = decode.role;
     if (role == "SuperID" || role == "Hostelauthority" || role == "BoysHostelAdmin" || role == "GirlsHostelAdmin") {
       dbbconnection.getConnection(function (err, connection) {
-        var sql1 = "select log.logid,stu.uid,stu.sname,stu.mobileno,log.approvaldt,log.passtype from log_details1 as log join studentdetails as stu where stu.uid=log.uid and log.hostelintime is null and category='Hostel' ORDER BY log.logid desc";
+        var sql1 = "select log.logid,stu.uid,stu.sname,stu.mobileno,stu.room_no,stu.mess_type,log.approvaldt,log.passtype from log_details1 as log join studentdetails as stu where stu.uid=log.uid and log.hostelintime is null and category='Hostel' ORDER BY log.logid desc";
         connection.query(sql1, function (err, result) {
           if (err) throw err;
           else {
@@ -411,8 +411,30 @@ app.get('/reports', verifyjwt, function (req, res) {
                       return;
                     }
                     result.homepass = homepass[0].homepass;
-                    // Render the EJS template with the results
-                    res.render(__dirname + '/views/reports', { result: result, message: req.flash('message') });
+                    // Count Veg / Non-Veg hostel outs (use COALESCE to handle alternate fields)
+                    var sqlVeg = "select count(*) as vegout from log_details1 log join studentdetails stu on stu.uid=log.uid where log.hostelintime is null and stu.category='Hostel' and LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%veg%' and LOWER(COALESCE(stu.mess_type,stu.other1,'')) NOT LIKE '%non%'";
+                    var sqlNon = "select count(*) as nonvegout from log_details1 log join studentdetails stu on stu.uid=log.uid where log.hostelintime is null and stu.category='Hostel' and (LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%non%' OR LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%non-veg%' OR LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%nonveg%')";
+
+                    connection.query(sqlVeg, function (err, vegResult) {
+                      if (err) {
+                        console.error(err);
+                        res.status(500).send('Error executing veg count');
+                        return;
+                      }
+                      result.vegOut = vegResult[0].vegout;
+
+                      connection.query(sqlNon, function (err, nonResult) {
+                        connection.release();
+                        if (err) {
+                          console.error(err);
+                          res.status(500).send('Error executing non-veg count');
+                          return;
+                        }
+                        result.nonVegOut = nonResult[0].nonvegout;
+                        // Render the EJS template with the results
+                        res.render(__dirname + '/views/reports', { result: result, message: req.flash('message') });
+                      });
+                    });
                   })
                 });
               });
@@ -476,8 +498,30 @@ app.get('/reports', verifyjwt, function (req, res) {
                       return;
                     }
                     result.homepass = homepass[0].homepass;
-                    // Render the EJS template with the results
-                    res.render(__dirname + '/views/reports', { result: result, message: req.flash('message') });
+                    // Count Veg / Non-Veg hostel outs for MALE
+                    var sqlVegMale = "select count(*) as vegout from log_details1 log join studentdetails stu on stu.uid=log.uid where log.hostelintime is null and stu.category='Hostel' and stu.gender='MALE' and LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%veg%' and LOWER(COALESCE(stu.mess_type,stu.other1,'')) NOT LIKE '%non%'";
+                    var sqlNonMale = "select count(*) as nonvegout from log_details1 log join studentdetails stu on stu.uid=log.uid where log.hostelintime is null and stu.category='Hostel' and stu.gender='MALE' and (LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%non%' OR LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%non-veg%' OR LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%nonveg%')";
+
+                    connection.query(sqlVegMale, function (err, vegResult) {
+                      if (err) {
+                        console.error(err);
+                        res.status(500).send('Error executing veg count');
+                        return;
+                      }
+                      result.vegOut = vegResult[0].vegout;
+
+                      connection.query(sqlNonMale, function (err, nonResult) {
+                        connection.release();
+                        if (err) {
+                          console.error(err);
+                          res.status(500).send('Error executing non-veg count');
+                          return;
+                        }
+                        result.nonVegOut = nonResult[0].nonvegout;
+                        // Render the EJS template with the results
+                        res.render(__dirname + '/views/reports', { result: result, message: req.flash('message') });
+                      });
+                    });
                   })
                 });
               });
@@ -541,8 +585,30 @@ app.get('/reports', verifyjwt, function (req, res) {
                       return;
                     }
                     result.homepass = homepass[0].homepass;
-                    // Render the EJS template with the results
-                    res.render(__dirname + '/views/reports', { result: result, message: req.flash('message') });
+                    // Count Veg / Non-Veg hostel outs for FEMALE
+                    var sqlVegFemale = "select count(*) as vegout from log_details1 log join studentdetails stu on stu.uid=log.uid where log.hostelintime is null and stu.category='Hostel' and stu.gender='FEMALE' and LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%veg%' and LOWER(COALESCE(stu.mess_type,stu.other1,'')) NOT LIKE '%non%'";
+                    var sqlNonFemale = "select count(*) as nonvegout from log_details1 log join studentdetails stu on stu.uid=log.uid where log.hostelintime is null and stu.category='Hostel' and stu.gender='FEMALE' and (LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%non%' OR LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%non-veg%' OR LOWER(COALESCE(stu.mess_type,stu.other1,'')) LIKE '%nonveg%')";
+
+                    connection.query(sqlVegFemale, function (err, vegResult) {
+                      if (err) {
+                        console.error(err);
+                        res.status(500).send('Error executing veg count');
+                        return;
+                      }
+                      result.vegOut = vegResult[0].vegout;
+
+                      connection.query(sqlNonFemale, function (err, nonResult) {
+                        connection.release();
+                        if (err) {
+                          console.error(err);
+                          res.status(500).send('Error executing non-veg count');
+                          return;
+                        }
+                        result.nonVegOut = nonResult[0].nonvegout;
+                        // Render the EJS template with the results
+                        res.render(__dirname + '/views/reports', { result: result, message: req.flash('message') });
+                      });
+                    });
                   })
                 });
               });
@@ -4012,16 +4078,76 @@ app.get('/student/requestpass', verifyStudentJwt, function (req, res) {
       // Check for active pass
       var activeSql = "SELECT * FROM log_details1 WHERE uid = ? AND status = 'ACTIVE' ORDER BY logid DESC LIMIT 1";
       connection.query(activeSql, [uid], function (err, activeResult) {
-        // Get pending requests
-        var pendingSql = "SELECT * FROM pass_requests WHERE uid = ? AND status = 'pending' ORDER BY created_at DESC";
-        connection.query(pendingSql, [uid], function (err, pendingResult) {
+        if (err) {
           connection.release();
+          req.flash('message', 'Database error');
+          return res.redirect('/student/dashboard');
+        }
 
-          res.render(__dirname + '/views/student_requestpass', {
-            student: student,
-            activePass: activeResult.length > 0 ? activeResult[0] : null,
-            pendingRequests: pendingResult || [],
-            message: req.flash('message')
+        // Get pending, approved and rejected requests
+        var pendingSql = "SELECT * FROM pass_requests WHERE uid = ? AND status = 'pending' ORDER BY created_at DESC";
+        var approvedSql = "SELECT * FROM pass_requests WHERE uid = ? AND status = 'approved' ORDER BY approved_at DESC";
+        var rejectedSql = "SELECT * FROM pass_requests WHERE uid = ? AND status = 'rejected' ORDER BY approved_at DESC";
+
+        connection.query(pendingSql, [uid], function (err, pendingResult) {
+          if (err) {
+            connection.release();
+            req.flash('message', 'Database error');
+            return res.redirect('/student/dashboard');
+          }
+
+          connection.query(approvedSql, [uid], function (err, approvedResult) {
+            if (err) {
+              connection.release();
+              req.flash('message', 'Database error');
+              return res.redirect('/student/dashboard');
+            }
+
+            connection.query(rejectedSql, [uid], function (err, rejectedResult) {
+              connection.release();
+              if (err) {
+                req.flash('message', 'Database error');
+                return res.redirect('/student/dashboard');
+              }
+
+              // Normalize date fields to ISO strings so client-side formatting is consistent
+              function toISO(val){
+                if (!val) return val;
+                if (val instanceof Date) return val.toISOString();
+                var d = new Date(val);
+                return isNaN(d.getTime()) ? val : d.toISOString();
+              }
+
+              function normalizeRows(rows){
+                if (!Array.isArray(rows)) return rows;
+                rows.forEach(function(r){
+                  ['created_at','expected_out','expected_return','approved_at','approvaldt','outdatetime','indatetime'].forEach(function(f){
+                    if (r[f]) r[f] = toISO(r[f]);
+                  });
+                });
+                return rows;
+              }
+
+              // Normalize active pass dates
+              var activePass = null;
+              if (activeResult && activeResult.length > 0) {
+                activePass = activeResult[0];
+                ['approvaldt','outdatetime','indatetime'].forEach(function(f){ if (activePass[f]) activePass[f] = toISO(activePass[f]); });
+              }
+
+              pendingResult = normalizeRows(pendingResult || []);
+              approvedResult = normalizeRows(approvedResult || []);
+              rejectedResult = normalizeRows(rejectedResult || []);
+
+              res.render(__dirname + '/views/student_requestpass', {
+                student: student,
+                activePass: activePass,
+                pendingRequests: pendingResult,
+                approvedRequests: approvedResult,
+                rejectedRequests: rejectedResult,
+                message: req.flash('message')
+              });
+            });
           });
         });
       });
@@ -4279,7 +4405,7 @@ app.post('/admin/approverequest/:id', verifyjwt, function (req, res) {
 
         const request = requestResult[0];
 
-        // Update request status
+        // Update request status to approved
         var updateSql = "UPDATE pass_requests SET status = 'approved', approved_by = ?, approved_at = NOW() WHERE requestid = ?";
         connection.query(updateSql, [adminName, requestId], function (err, updateResult) {
           if (err) {
@@ -4288,23 +4414,17 @@ app.post('/admin/approverequest/:id', verifyjwt, function (req, res) {
             return res.redirect('/admin/passrequests');
           }
 
-          // Create the actual pass in log_details1
-          var createPassSql = `
-            INSERT INTO log_details1 (uid, status, approvaldt, passtype, hosteloutauth) 
-            VALUES (?, 'ACTIVE', NOW(), ?, ?)`;
           
-          connection.query(createPassSql, [request.uid, request.passtype, adminName], function (err, passResult) {
-            // Add notification for student
-            var notifSql = `
-              INSERT INTO student_notifications (uid, type, title, message, created_at) 
-              VALUES (?, 'pass_approved', 'Pass Request Approved', ?, NOW())`;
-            var notifMsg = `Your ${request.passtype} request has been approved by ${adminName}. Please collect your pass from the hostel office.`;
-            
-            connection.query(notifSql, [request.uid, notifMsg], function (err, notifResult) {
-              connection.release();
-              req.flash('message', 'Pass request approved and pass generated successfully');
-              res.redirect('/admin/passrequests');
-            });
+          // Approval only: do NOT create log_details1 entry here. Student must scan UID to complete hostel check-out.
+          var notifSql = `
+            INSERT INTO student_notifications (uid, type, title, message, created_at) 
+            VALUES (?, 'pass_approved', 'Pass Request Approved', ?, NOW())`;
+          var notifMsg = `Your ${request.passtype} request has been approved by ${adminName}. Please present your UID at the gate to complete hostel check-out.`;
+
+          connection.query(notifSql, [request.uid, notifMsg], function (err, notifResult) {
+            connection.release();
+            req.flash('message', 'Pass request approved; student must scan UID to complete hostel check-out');
+            return res.redirect('/admin/passrequests');
           });
         });
       });
