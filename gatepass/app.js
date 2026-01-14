@@ -4637,9 +4637,8 @@ app.get('/api/dashboard-stats', verifyjwt, async (req, res) => {
 
 
 // -- ----------------------------------------------------------------------------
-
 app.get('/analytics/dashboard', verifyjwt, async function (req, res) {
-  const role = req.decode.role;
+  const role = req.decode ? req.decode.role : 'Admin';
   let genderFilter = "";
   if (role === "BoysHostelAdmin") genderFilter = " AND gender='MALE' ";
   else if (role === "GirlsHostelAdmin") genderFilter = " AND gender='FEMALE' ";
@@ -4647,55 +4646,36 @@ app.get('/analytics/dashboard', verifyjwt, async function (req, res) {
   const db = dbbconnection.promise();
 
   try {
-      const [studentStats, gatePassTrend, attendanceToday, sickLeave, requests, mess, blocks] = await Promise.all([
-          // Total & Gender split
-          db.query(`SELECT COUNT(*) as total, 
-                     SUM(CASE WHEN gender='MALE' THEN 1 ELSE 0 END) as males,
-                     SUM(CASE WHEN gender='FEMALE' THEN 1 ELSE 0 END) as females 
-                     FROM studentdetails WHERE category='Hostel' ${genderFilter}`),
-          
-          // Hourly trend (Fixed to ensure all 24 hours show up even if 0)
-          db.query(`SELECT HOUR(outdatetime) as hour, COUNT(*) as count 
-                    FROM log_details1 WHERE DATE(outdatetime) = CURDATE() 
-                    GROUP BY hour ORDER BY hour ASC`),
-
-          // Attendance (Today)
-          db.query(`SELECT status, COUNT(*) as count FROM daily_attendance 
-                    WHERE date = CURDATE() GROUP BY status`),
-
-          // Sick Leave by illness
-          db.query(`SELECT illness, COUNT(*) as count FROM sick_leave_logs GROUP BY illness`),
-
-          // Pass Requests (Check if table exists)
-          db.query(`SELECT status, COUNT(*) as count FROM pass_requests GROUP BY status`),
-
-          // Mess Type
-          db.query(`SELECT mess_type, COUNT(*) as count FROM studentdetails 
-                    WHERE category='Hostel' ${genderFilter} GROUP BY mess_type`),
-
-          // Block breakdown
-          db.query(`SELECT COALESCE(block, 'Unassigned') as label, COUNT(*) as count 
-                    FROM studentdetails WHERE category='Hostel' ${genderFilter} GROUP BY label`)
+      const [totalStudents, attendance, mess, sick, activePasses, blockStats, movementTrend] = await Promise.all([
+          db.query(`SELECT COUNT(*) as count FROM studentdetails WHERE category='Hostel' ${genderFilter}`),
+          db.query(`SELECT status, COUNT(*) as count FROM daily_attendance WHERE date = CURDATE() GROUP BY status`),
+          db.query(`SELECT mess_type, COUNT(*) as count FROM studentdetails WHERE category='Hostel' ${genderFilter} GROUP BY mess_type`),
+          db.query(`SELECT COUNT(*) as count FROM sick_leave_logs WHERE logdate = CURDATE()`),
+          db.query(`SELECT passtype, COUNT(*) as count FROM log_details1 WHERE status = 'ACTIVE' AND indatetime IS NULL GROUP BY passtype`),
+          db.query(`SELECT COALESCE(block, 'Unassigned') as label, COUNT(*) as count FROM studentdetails WHERE category='Hostel' ${genderFilter} GROUP BY label`),
+          // Hourly Exit Trend for Today
+          db.query(`SELECT HOUR(outdatetime) as hour, COUNT(*) as count FROM log_details1 WHERE DATE(outdatetime) = CURDATE() GROUP BY hour ORDER BY hour ASC`)
       ]);
 
-      res.render(__dirname + '/views/analytics_dashboard', {
-          role,
-          stats: {
-              students: studentStats[0][0],
-              gateTrend: gatePassTrend[0],
-              attendance: attendanceToday[0],
-              sick: sickLeave[0],
-              requests: requests[0],
-              mess: mess[0],
-              blocks: blocks[0]
-          }
-      });
+      const dashboardData = {
+          total: totalStudents[0][0]?.count || 0,
+          present: attendance[0].find(a => a.status === 'Present')?.count || 0,
+          sick: sick[0][0]?.count || 0,
+          cityPass: activePasses[0].find(p => p.passtype === 'City Pass')?.count || 0,
+          homePass: activePasses[0].find(p => p.passtype === 'Home Pass')?.count || 0,
+          attendanceRaw: attendance[0].filter(a => a.status),
+          messRaw: mess[0].filter(m => m.mess_type),
+          blocks: blockStats[0],
+          movementRaw: movementTrend[0]
+      };
+
+      res.render(__dirname + '/views/analytics_dashboard', { role, data: dashboardData });
+
   } catch (err) {
-      console.error("Dashboard Logic Error:", err);
-      res.status(500).send("Data Sync Error: " + err.message);
+      console.error("Dashboard Load Error:", err);
+      res.status(500).send("Database Error: " + err.message);
   }
 });
-
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
