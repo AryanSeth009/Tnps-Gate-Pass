@@ -3060,6 +3060,164 @@ app.post('/savesickleave/:uid', verifyjwt, function (req, res) {
   }
 });
 
+// --- Student sick leave request (portal) ---
+app.get('/student/sickleave', verifyStudentJwt, function(req, res){
+  try{
+    const uid = req.studentUid;
+    if(!uid) return res.redirect('/student/login');
+    dbbconnection.getConnection(function(err, connection){
+      if(err) throw err;
+      connection.query('SELECT uid,sname,dept,year FROM studentdetails WHERE uid = ?', [uid], function(err, result){
+        connection.release();
+        if(err) { console.error(err); req.flash('message','DB error'); return res.redirect('/student/login'); }
+        const student = result && result[0] ? result[0] : null;
+        res.render(__dirname + '/views/student_sickleave_request', { student: student, message: req.flash('message') });
+      });
+    });
+  }catch(err){
+    res.clearCookie('studentjwt'); req.flash('message','Session error'); return res.redirect('/student/login');
+  }
+});
+
+app.post('/student/sickleave', verifyStudentJwt, function(req, res){
+  try{
+    const uid = req.studentUid;
+    const illnessRaw = (req.body.illness || '').toString().trim();
+    const otherIllness = (req.body.other_illness || '').toString().trim();
+    const illness = illnessRaw || otherIllness;
+    const details = (req.body.details || '').toString().trim();
+    if(!illness){ req.flash('message','Please enter illness'); return res.redirect('/student/sickleave'); }
+    dbbconnection.getConnection(function(err, connection){
+      if(err) throw err;
+      const sql = 'INSERT INTO sick_leave_requests (uid, illness, details, status, created_at) VALUES (?,?,?,?,NOW())';
+      connection.query(sql, [uid, illness, details, 'pending'], function(err, result){
+        connection.release();
+        if(err){ console.error('Error saving sick leave request', err); req.flash('message','Error saving request'); return res.redirect('/student/sickleave'); }
+        req.flash('message','Sick leave request submitted');
+        res.redirect('/student/sickleave');
+      });
+    });
+  }catch(err){ res.clearCookie('studentjwt'); req.flash('message','Session error'); return res.redirect('/student/login'); }
+});
+
+// Student: view own sick leave requests
+app.get('/student/sickleaverequests', verifyStudentJwt, function(req, res){
+  const uid = req.studentUid;
+  dbbconnection.getConnection(function(err, connection){
+    if(err){ console.error(err); req.flash('message','DB error'); return res.redirect('/student/login'); }
+    const sql = 'SELECT r.*, s.sname FROM sick_leave_requests r LEFT JOIN studentdetails s ON s.uid = r.uid WHERE r.uid = ? ORDER BY r.created_at DESC';
+    connection.query(sql, [uid], function(err, results){
+      connection.release();
+      if(err){ console.error(err); req.flash('message','DB error'); return res.redirect('/student/login'); }
+      res.render(__dirname + '/views/student_sickleaverequests', { requests: results, message: req.flash('message') });
+    });
+  });
+});
+
+// Student: cancel pending sick leave request
+app.post('/student/cancelsickrequest/:id', verifyStudentJwt, function(req, res){
+  const uid = req.studentUid;
+  const id = req.params.id;
+  dbbconnection.getConnection(function(err, connection){
+    if(err){ console.error(err); req.flash('message','DB error'); return res.redirect('/student/sickleaverequests'); }
+    // only allow cancelling if request belongs to student and is pending
+    const checkSql = 'SELECT status, uid FROM sick_leave_requests WHERE requestid = ?';
+    connection.query(checkSql, [id], function(err, rows){
+      if(err){ connection.release(); console.error(err); req.flash('message','DB error'); return res.redirect('/student/sickleaverequests'); }
+      if(!rows || rows.length===0){ connection.release(); req.flash('message','Request not found'); return res.redirect('/student/sickleaverequests'); }
+      const row = rows[0];
+      if(row.uid !== uid){ connection.release(); req.flash('message','Unauthorized'); return res.redirect('/student/sickleaverequests'); }
+      if(row.status !== 'pending'){ connection.release(); req.flash('message','Only pending requests can be cancelled'); return res.redirect('/student/sickleaverequests'); }
+      const upd = 'UPDATE sick_leave_requests SET status = ?, updated_at = NOW() WHERE requestid = ?';
+      connection.query(upd, ['cancelled', id], function(err, result){
+        connection.release();
+        if(err){ console.error(err); req.flash('message','DB error'); }
+        else { req.flash('message','Request cancelled'); }
+        return res.redirect('/student/sickleaverequests');
+      });
+    });
+  });
+});
+
+// --- Admin: list sick leave requests ---
+app.get('/admin/sickleaverequests', verifyjwt, function(req, res){
+  const token = req.cookies.jwt;
+  try{
+    const decode = jwt.verify(token, secretkey);
+    const role = decode.role;
+    if(!(role === 'SuperID' || role === 'Hostelauthority' || role === 'BoysHostelAdmin' || role === 'GirlsHostelAdmin')){
+      req.flash('message','Unauthorized'); return res.redirect('/loginpanel');
+    }
+    dbbconnection.getConnection(function(err, connection){
+      if(err) throw err;
+      const sql = "SELECT r.*, s.sname FROM sick_leave_requests r LEFT JOIN studentdetails s ON r.uid = s.uid ORDER BY r.created_at DESC LIMIT 200";
+      connection.query(sql, function(err, result){
+        connection.release();
+        if(err){ console.error(err); req.flash('message','DB error'); return res.redirect('/daterange'); }
+        res.render(__dirname + '/views/admin_sickleaverequests', { requests: result, message: req.flash('message') });
+      });
+    });
+  }catch(err){ res.clearCookie('jwt'); req.flash('message','Session error'); return res.redirect('/loginpanel'); }
+});
+
+// Admin approve - move to sick_leave_logs and mark request approved
+app.post('/admin/sickleaverequest/approve/:id', verifyjwt, function(req, res){
+  const token = req.cookies.jwt;
+  try{
+    const decode = jwt.verify(token, secretkey);
+    const role = decode.role; const adminname = decode.adminname;
+    if(!(role === 'SuperID' || role === 'Hostelauthority' || role === 'BoysHostelAdmin' || role === 'GirlsHostelAdmin')){
+      req.flash('message','Unauthorized'); return res.redirect('/loginpanel');
+    }
+    const id = req.params.id;
+    dbbconnection.getConnection(function(err, connection){
+      if(err) throw err;
+      // get request
+      connection.query('SELECT * FROM sick_leave_requests WHERE requestid = ? AND status = "pending"', [id], function(err, rows){
+        if(err || !rows || rows.length===0){ connection.release(); req.flash('message','Request not found'); return res.redirect('/admin/sickleaverequests'); }
+        const r = rows[0];
+        const currentDT = datetime(currentdate());
+        // insert into sick_leave_logs
+        const insertSql = 'INSERT INTO sick_leave_logs (uid, illness, logdate, logtime, recorded_by, created_at) VALUES (?,?,?,?,?,?)';
+        const dtParts = currentDT.split(' ');
+        const logdate = dtParts[0];
+        const logtime = dtParts.slice(1).join(' ');
+        connection.query(insertSql, [r.uid, r.illness, logdate, logtime, adminname, currentDT], function(err2){
+          if(err2){ connection.release(); console.error(err2); req.flash('message','Error recording sick leave'); return res.redirect('/admin/sickleaverequests'); }
+          // update request status
+          connection.query('UPDATE sick_leave_requests SET status = ?, approved_by = ?, approved_at = ? WHERE requestid = ?', ['approved', adminname, currentDT, id], function(err3){
+            connection.release(); if(err3){ console.error(err3); req.flash('message','Error updating request'); }
+            else req.flash('message','Sick leave approved and recorded');
+            res.redirect('/admin/sickleaverequests');
+          });
+        });
+      });
+    });
+  }catch(err){ res.clearCookie('jwt'); req.flash('message','Session error'); return res.redirect('/loginpanel'); }
+});
+
+// Admin reject
+app.post('/admin/sickleaverequest/reject/:id', verifyjwt, function(req, res){
+  const token = req.cookies.jwt;
+  try{
+    const decode = jwt.verify(token, secretkey);
+    const role = decode.role; const adminname = decode.adminname;
+    if(!(role === 'SuperID' || role === 'Hostelauthority' || role === 'BoysHostelAdmin' || role === 'GirlsHostelAdmin')){
+      req.flash('message','Unauthorized'); return res.redirect('/loginpanel');
+    }
+    const id = req.params.id; const reason = req.body.reason || '';
+    dbbconnection.getConnection(function(err, connection){
+      if(err) throw err;
+      const currentDT = datetime(currentdate());
+      connection.query('UPDATE sick_leave_requests SET status = ?, approved_by = ?, approved_at = ?, rejection_reason = ? WHERE requestid = ?', ['rejected', adminname, currentDT, reason, id], function(err2){
+        connection.release(); if(err2){ console.error(err2); req.flash('message','DB error'); }
+        else req.flash('message','Request rejected');
+        res.redirect('/admin/sickleaverequests');
+      });
+    });
+  }catch(err){ res.clearCookie('jwt'); req.flash('message','Session error'); return res.redirect('/loginpanel'); }
+});
+
 //Sick Leave - View logs
 app.get('/sickleavelogs', verifyjwt, function (req, res) {
   const tokenadmin = req.cookies.jwt;
@@ -4070,9 +4228,17 @@ app.get('/admin/passrequests', verifyjwt, function (req, res) {
         connection.query(statsSql, function (err, statsResult) {
           connection.release();
 
+          // Safely handle stats result and errors
+          let stats = { pending: 0, approved: 0, rejected: 0, total: 0 };
+          if (err) {
+            console.error('Stats query error:', err);
+          } else if (Array.isArray(statsResult) && statsResult.length > 0) {
+            stats = statsResult[0] || stats;
+          }
+
           res.render(__dirname + '/views/admin_passrequests', {
             requests: requests || [],
-            stats: statsResult[0] || { pending: 0, approved: 0, rejected: 0, total: 0 },
+            stats: stats,
             filterStatus: filterStatus,
             fromDate: fromDate,
             toDate: toDate,
