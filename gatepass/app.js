@@ -2221,6 +2221,48 @@ app.get('/chart', function (req, res) {
   res.render(__dirname + '/views/chart', { message: req.flash('message') });
 });
 
+// Kitchen status page
+app.get('/kitchen', verifyjwt, function (req, res) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    role = decode.role;
+    if (role == "KitchenAdmin") {
+      // Add kitchen status logic here
+      res.render(__dirname + '/views/kitchen', { message: req.flash('message') });
+    }
+    else {
+      req.flash('message', 'Unauthorised Access');
+      return res.redirect('/loginpanel');
+    }
+  } catch (err) {
+    res.clearCookie("jwt");
+    req.flash('message', 'Something went wrong');
+    return res.redirect('/loginpanel');
+  }
+});
+
+// Complain page
+app.get('/complain', verifyjwt, function (req, res) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    role = decode.role;
+    if (role == "TechnicianAuthority") {
+      // Add complain logic here
+      res.render(__dirname + '/views/complain', { message: req.flash('message') });
+    }
+    else {
+      req.flash('message', 'Unauthorised Access');
+      return res.redirect('/loginpanel');
+    }
+  } catch (err) {
+    res.clearCookie("jwt");
+    req.flash('message', 'Something went wrong');
+    return res.redirect('/loginpanel');
+  }
+});
+
 app.post('/loginpanel', function (req, res) {
 
 
@@ -2259,6 +2301,12 @@ app.post('/loginpanel', function (req, res) {
                 }
                 else if (role == "Hostelauthority") {
                   res.redirect("/tokenhomepage");
+                }
+                else if (role == "KitchenAdmin") {
+                  res.redirect("/kitchen");
+                }
+                else if (role == "TechnicianAuthority") {
+                  res.redirect("/complain");
                 }
 
               } catch (err) {
@@ -2575,6 +2623,29 @@ app.get('/deacivatepass/:id', verifyjwt, function (req, res) {
 // Optimized Excel Import for Integrated Schema
 // Route to display the list of hostel students
 // Full Updated Route for Automatic Room Allocation
+
+
+
+// Helper to convert Excel Serial Date to MySQL Date (YYYY-MM-DD)
+const formatExcelDate = (excelDate) => {
+    if (!excelDate || excelDate === '') return null;
+    
+    // If Excel already parsed it as a Date object
+    if (excelDate instanceof Date) {
+        return excelDate.toISOString().split('T')[0];
+    }
+
+    // If it's a number (Excel Serial Date)
+    if (!isNaN(excelDate)) {
+        const date = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
+        return date.toISOString().split('T')[0];
+    }
+
+    return null; // Return null if format is unknown
+};
+
+
+
 app.post('/import-excel', uploadFile.single('import-excel'), async function (req, res) {
     const tokenadmin = req.cookies.jwt;
     const decode = jwt.verify(tokenadmin, secretkey);
@@ -2616,34 +2687,41 @@ app.post('/import-excel', uploadFile.single('import-excel'), async function (req
             return s.length > maxLen ? s.substring(0, maxLen) : s;
         };
 
-        // Convert to array format for database insertion with data sanitization
-        const dataForDB = rows.map(row => [
-            truncate(row.uid, 50),
-            truncate(row.sname, 100),
-            truncate(row.email, 100),
-            truncate(row.dept, 100),
-            truncate(row.address, 255),
-            truncate(row.year, 50),
-            truncate(row.category, 50),
-            truncate(row.gender, 20),
-            truncate(row.mobileno, 20),
-            truncate(row.dob, 20),
-            truncate(row.academicyear, 50),
-            truncate(row.path, 255),
-            truncate(row.status, 50),
-            truncate(row.parentname, 100),
-            truncate(row.parentnumber, 20),
-            truncate(row.room_no, 100),
-            truncate(row.bed_no, 100),
-            truncate(row.other1, 500),
-            truncate(row.other2, 500),
-            truncate(row.other3, 500)
-        ]);
+     // ... inside your app.post('/import-excel', ...) 
+const dataForDB = rows.map((row, index) => {
+    try {
+        return [
+            truncate(row.uid, 50),          // 1
+            truncate(row.sname, 100),       // 2
+            truncate(row.email, 100),       // 3
+            truncate(row.dept, 100),        // 4
+            truncate(row.address, 255),     // 5
+            truncate(row.year, 50),         // 6
+            truncate(row.category, 50),     // 7
+            truncate(row.gender, 20),       // 8
+            truncate(row.mobileno, 20),     // 9
+            formatExcelDate(row.dob),       // 10
+            truncate(row.academicyear, 50), // 11
+            truncate(row.path, 255),        // 12
+            truncate(row.status, 50),       // 13
+            truncate(row.parentname, 100),  // 14
+            truncate(row.parentnumber, 20), // 15
+            truncate(row.room_no, 50),      // 16
+            truncate(row.bed_no, 50),       // 17
+            truncate(row.other1, 200),      // 18
+            truncate(row.other2, 200),      // 19
+            truncate(row.other3, 200)       // 20
+        ];
+    } catch (e) {
+        console.error(`Error processing row ${index + 1}:`, e);
+        return null;
+    }
+}).filter(row => row !== null);
 
-        dbbconnection.getConnection((error, connection) => {
-            if (error) throw error;
+dbbconnection.getConnection((error, connection) => {
+    if (error) throw error;
 
-            // UPDATED SQL: 20 Columns including room_no and bed_no
+            // UPDATED SQL: Include all available columns
             let sql = `INSERT INTO studentdetails 
                 (uid, sname, email, dept, address, year, category, gender, mobileno, dob, academicyear, path, status, parentname, parentnumber, room_no, bed_no, other1, other2, other3) 
                 VALUES ? 
@@ -2708,43 +2786,46 @@ app.post('/import-excel-hostel', uploadFile.single('import-excel'), async functi
         // Convert to array format for database insertion with data sanitization
         // Excel columns: uid, sname, email, dept, year, category, gender, mobileno, parentnumber, mess_type, religion, hostel_fee_status, block, floor, room_no, bed_no
         // DB columns: uid, sname, email, dept, address, year, category, gender, mobileno, dob, academicyear, path, status, parentname, parentnumber, room_no, bed_no, other1, other2, other3
-        const dataForDB = rows.map((row, idx) => [
-            truncate(row.uid, 50),
-            truncate(row.sname, 100),
-            truncate(row.email, 100),
-            truncate(row.dept, 100),
-            '', // address - not in Excel
-            truncate(row.year, 50),
-            'Hostel', // force category to Hostel
-            truncate(row.gender, 20),
-            truncate(row.mobileno, 20),
-            '', // dob - not in Excel
-            '', // academicyear - not in Excel
-            '', // path - not in Excel
-            'active', // status - default to active
-            '', // parentname - not in Excel
-            truncate(row.parentnumber, 20),
-            truncate(row.room_no, 100),
-            truncate(row.bed_no, 100),
-            truncate(row.religion, 100), // religion in other1
-            truncate(row.block, 100), // block in other2
-            truncate(row.floor, 100) // floor in other3
-        ]);
-
+  // ... inside your app.post('/import-excel-hostel', ...)
+const dataForDB = rows.map((row, idx) => [
+    truncate(row.uid, 50),
+    truncate(row.sname, 100),
+    truncate(row.email, 100),
+    truncate(row.dept, 100),
+    '', // address
+    truncate(row.year, 50),
+    'Hostel', 
+    truncate(row.gender, 20),
+    truncate(row.mobileno, 20),
+    null, // dob - changed from '' to null for the DATE column
+    '', // academicyear
+    '', // path
+    'active', 
+    '', // parentname
+    truncate(row.parentnumber, 20),
+    truncate(row.room_no, 100),
+    truncate(row.bed_no, 100),
+    truncate(row.religion, 100), 
+    truncate(row.block, 100), 
+    truncate(row.floor, 100) 
+]);
+// ...
         dbbconnection.getConnection((error, connection) => {
             if (error) throw error;
 
             // SQL for hostel student import with 20 columns
-            let sql = `INSERT INTO studentdetails 
-                (uid, sname, email, dept, address, year, category, gender, mobileno, dob, academicyear, path, status, parentname, parentnumber, room_no, bed_no, other1, other2, other3) 
-                VALUES ? 
-                ON DUPLICATE KEY UPDATE 
-                category='Hostel',
-                room_no=VALUES(room_no),
-                bed_no=VALUES(bed_no)`;
+            // UPDATED SQL: Now has 21 columns
+let sql = `INSERT INTO studentdetails 
+        (uid, sname, email, dept, address, year, category, gender, mobileno, dob, academicyear, path, status, parentname, parentnumber, room_no, bed_no, block, other1, other2, other3) 
+        VALUES ? 
+        ON DUPLICATE KEY UPDATE 
+        category='Hostel',
+        room_no=VALUES(room_no),
+        bed_no=VALUES(bed_no),
+        block=VALUES(block)`; // ALSO UPDATE BLOCK ON DUPLICATE
 
-            connection.query(sql, [dataForDB], (error, response) => {
-                connection.release();
+    connection.query(sql, [dataForDB], (error, response) => {
+        connection.release();
                 if (error) {
                     console.error("Excel Import Error:", error);
                     req.flash('message', 'Error importing data: ' + error.message);
@@ -4445,26 +4526,27 @@ app.get('/attendance', verifyjwt, function (req, res) {
  * Returns students who are in 'Hostel' category but have no room assigned
  */
 app.get('/api/search-unallocated', verifyjwt, (req, res) => {
-    const term = req.query.term || ''; 
-    dbbconnection.getConnection(function (err, connection) {
-        if (err) return res.status(500).json([]);
-        
-        const sql = `
-            SELECT uid, sname 
-            FROM studentdetails 
-            WHERE category = 'Hostel' 
-            AND (room_no IS NULL OR room_no = '') 
-            AND (uid LIKE ? OR sname LIKE ?) 
-            LIMIT 50`;
+  const term = req.query.term || ''; 
+  dbbconnection.getConnection(function (err, connection) {
+      if (err) return res.status(500).json([]);
+      
+      // Updated logic: Exclude students assigned to actual rooms (starting with A or B)
+      // and include everyone else marked as 'Hostel'
+      const sql = `
+          SELECT uid, sname 
+          FROM studentdetails 
+          WHERE category = 'Hostel' 
+          AND (room_no IS NULL OR room_no = '' OR room_no = 'Demo') 
+          AND (uid LIKE ? OR sname LIKE ?) 
+          LIMIT 50`;
 
-        connection.query(sql, [`%${term}%`, `%${term}%`], (err, results) => {
-            connection.release();
-            if (err) return res.status(500).json([]);
-            res.json(results);
-        });
-    });
+      connection.query(sql, [`%${term}%`, `%${term}%`], (err, results) => {
+          connection.release();
+          if (err) return res.status(500).json([]);
+          res.json(results);
+      });
+  });
 });
-
 /**
  * 3. Assignment / De-allocation API
  * Links a student to a room/bed constant or clears it (if room_no is null)
@@ -4515,84 +4597,107 @@ app.post('/api/mark-attendance', verifyjwt, (req, res) => {
 // ==========================================
 // 1. GLOBAL ANALYTICS DASHBOARD (REMOVING STATUS, ADDING BLOCK BREAKDOWN)
 // ==========================================
-app.get('/analytics/global', verifyjwt, async function (req, res) {
+app.get('/api/dashboard-stats', verifyjwt, async (req, res) => {
+  const role = req.decode.role;
+  let genderFilter = "";
+  if (role === "BoysHostelAdmin") genderFilter = " AND gender='MALE' ";
+  if (role === "GirlsHostelAdmin") genderFilter = " AND gender='FEMALE' ";
+
+  const queries = {
+      // 1. Student Stats
+      deptDist: `SELECT dept as label, COUNT(*) as value FROM studentdetails WHERE category='Hostel' ${genderFilter} GROUP BY dept`,
+      messDist: `SELECT mess_type as label, COUNT(*) as value FROM studentdetails WHERE category='Hostel' ${genderFilter} GROUP BY mess_type`,
+      yearDist: `SELECT year as label, COUNT(*) as value FROM studentdetails WHERE category='Hostel' ${genderFilter} GROUP BY year`,
+      
+      // 2. Gate Pass Stats (Today)
+      passHourly: `SELECT HOUR(approvaldt) as label, COUNT(*) as value FROM log_details1 WHERE DATE(approvaldt) = CURDATE() GROUP BY label`,
+      passType: `SELECT passtype as label, COUNT(*) as value FROM log_details1 WHERE status='ACTIVE' GROUP BY label`,
+      
+      // 3. Sick Leave Stats
+      sickDist: `SELECT illness as label, COUNT(*) as value FROM sick_leave_logs GROUP BY illness`,
+
+      // 4. Room Occupancy by Block
+      blockDist: `SELECT block as label, COUNT(*) as value FROM studentdetails WHERE category='Hostel' AND block IS NOT NULL GROUP BY block`
+  };
+
+  // Execute all queries
   try {
-      const tokenadmin = req.cookies.jwt;
-      const decode = jwt.verify(tokenadmin, secretkey);
-      const role = decode.role;
-
-      dbbconnection.getConnection((err, connection) => {
-          if (err) { console.error("DB Connection Error:", err); return res.redirect('/loginpanel'); }
-
-          // Query 1: Today's Attendance Counts (Present/Absent/Homepass)
-          const sqlAttendance = `
-              SELECT 
-                  COUNT(s.uid) as Total,
-                  SUM(CASE WHEN d.status = 'Present' THEN 1 ELSE 0 END) as Present,
-                  SUM(CASE WHEN d.status = 'Absent' THEN 1 ELSE 0 END) as Absent,
-                  SUM(CASE WHEN d.status = 'Home' THEN 1 ELSE 0 END) as Home
-              FROM studentdetails s
-              LEFT JOIN daily_attendance d ON s.uid = d.uid AND d.date = CURDATE()
-              WHERE s.category='Hostel'`;
-
-          // Query 2: Mess Utilization (Veg vs Non-Veg)
-          const sqlMess = `
-              SELECT mess_type, COUNT(*) as count 
-              FROM studentdetails WHERE category='Hostel' GROUP BY mess_type`;
-
-          // NEW Query 3: Student Breakdown by Block
-          const sqlBlock = `
-              SELECT block, COUNT(*) as count 
-              FROM studentdetails WHERE category='Hostel' GROUP BY block ORDER BY block ASC`;
-          
-          // Query 4: Breakdown by Academic Year
-          const sqlYear = `
-              SELECT year, COUNT(*) as count 
-              FROM studentdetails WHERE category='Hostel' GROUP BY year ORDER BY year ASC`;
-
-
-          // Execute all queries in sequence
-          connection.query(sqlAttendance, (err, resAttendance) => {
-              if(err) { connection.release(); console.error(err); return res.status(500).send("DB Error"); }
-              
-              connection.query(sqlMess, (err, resMess) => {
-                  if(err) { connection.release(); console.error(err); return res.status(500).send("DB Error"); }
-
-                  connection.query(sqlBlock, (err, resBlock) => {
-                      if(err) { connection.release(); console.error(err); return res.status(500).send("DB Error"); }
-
-                      connection.query(sqlYear, (err, resYear) => {
-                          connection.release();
-                          if(err) { console.error(err); return res.status(500).send("DB Error"); }
-
-                          const stats = {
-                              attendance: resAttendance[0],
-                              mess: resMess,
-                              block: resBlock, // NEW DATA
-                              year: resYear
-                          };
-
-                          res.render(__dirname + '/views/analytics', { 
-                              stats: stats, 
-                              role: role, 
-                              message: req.flash('message') 
-                          });
-                      });
-                  });
-              });
-          });
-      });
+      const results = {};
+      const connection = await dbbconnection.promise(); // Use promise wrapper if available
+      
+      for (let key in queries) {
+          const [rows] = await connection.query(queries[key]);
+          results[key] = rows;
+      }
+      res.json(results);
   } catch (err) {
-      console.error("Auth/Token Error:", err);
-      res.redirect('/loginpanel');
+      res.status(500).json({ error: err.message });
   }
 });
 
 
+// -- ----------------------------------------------------------------------------
+
+app.get('/analytics/dashboard', verifyjwt, async function (req, res) {
+  const role = req.decode.role;
+  let genderFilter = "";
+  if (role === "BoysHostelAdmin") genderFilter = " AND gender='MALE' ";
+  else if (role === "GirlsHostelAdmin") genderFilter = " AND gender='FEMALE' ";
+
+  const db = dbbconnection.promise();
+
+  try {
+      const [studentStats, gatePassTrend, attendanceToday, sickLeave, requests, mess, blocks] = await Promise.all([
+          // Total & Gender split
+          db.query(`SELECT COUNT(*) as total, 
+                     SUM(CASE WHEN gender='MALE' THEN 1 ELSE 0 END) as males,
+                     SUM(CASE WHEN gender='FEMALE' THEN 1 ELSE 0 END) as females 
+                     FROM studentdetails WHERE category='Hostel' ${genderFilter}`),
+          
+          // Hourly trend (Fixed to ensure all 24 hours show up even if 0)
+          db.query(`SELECT HOUR(outdatetime) as hour, COUNT(*) as count 
+                    FROM log_details1 WHERE DATE(outdatetime) = CURDATE() 
+                    GROUP BY hour ORDER BY hour ASC`),
+
+          // Attendance (Today)
+          db.query(`SELECT status, COUNT(*) as count FROM daily_attendance 
+                    WHERE date = CURDATE() GROUP BY status`),
+
+          // Sick Leave by illness
+          db.query(`SELECT illness, COUNT(*) as count FROM sick_leave_logs GROUP BY illness`),
+
+          // Pass Requests (Check if table exists)
+          db.query(`SELECT status, COUNT(*) as count FROM pass_requests GROUP BY status`),
+
+          // Mess Type
+          db.query(`SELECT mess_type, COUNT(*) as count FROM studentdetails 
+                    WHERE category='Hostel' ${genderFilter} GROUP BY mess_type`),
+
+          // Block breakdown
+          db.query(`SELECT COALESCE(block, 'Unassigned') as label, COUNT(*) as count 
+                    FROM studentdetails WHERE category='Hostel' ${genderFilter} GROUP BY label`)
+      ]);
+
+      res.render(__dirname + '/views/analytics_dashboard', {
+          role,
+          stats: {
+              students: studentStats[0][0],
+              gateTrend: gatePassTrend[0],
+              attendance: attendanceToday[0],
+              sick: sickLeave[0],
+              requests: requests[0],
+              mess: mess[0],
+              blocks: blocks[0]
+          }
+      });
+  } catch (err) {
+      console.error("Dashboard Logic Error:", err);
+      res.status(500).send("Data Sync Error: " + err.message);
+  }
+});
 
 
-
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log("Server running on port ", PORT);
 
