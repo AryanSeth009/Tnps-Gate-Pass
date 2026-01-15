@@ -313,10 +313,17 @@
                             </form>
                         </div>
                     <% } else if(req.approved_by) { %>
-                        <div style="font-size: 13px; color: #888; padding-top: 10px; border-top: 1px solid #eee;">
-                            <strong><%= req.status === 'approved' ? 'Approved' : 'Rejected' %> by:</strong> <%= req.approved_by %> 
-                            <% if(req.approved_at) { %>at <%= req.approved_at %><% } %>
-                            <% if(req.rejection_reason) { %><br><strong>Reason:</strong> <%= req.rejection_reason %><% } %>
+                        <div style="font-size: 13px; color: #888; padding-top: 10px; border-top: 1px solid #eee; display:flex; justify-content:space-between; align-items:center; gap:12px;">
+                            <div>
+                                <strong><%= req.status === 'approved' ? 'Approved' : 'Rejected' %> by:</strong> <%= req.approved_by %> 
+                                <% if(req.approved_at) { %>at <%= req.approved_at %><% } %>
+                                <% if(req.rejection_reason) { %><br><strong>Reason:</strong> <%= req.rejection_reason %><% } %>
+                            </div>
+                            <div>
+                                <form action="/admin/resetrequest/<%= req.requestid %>" method="POST" style="display:inline;">
+                                    <button type="submit" class="secondary" onclick="return confirm('Reset this request to pending? This will clear approval/rejection info.')">Reset</button>
+                                </form>
+                            </div>
                         </div>
                     <% } %>
                 </div>
@@ -359,6 +366,11 @@
                 btn.innerHTML = isCompact ? '<i class="fas fa-expand-arrows-alt"></i> Expanded' : '<i class="fas fa-compress-arrows-alt"></i> Compact';
             });
         })();
+    </script>
+    <script>
+        function pendingclick (){
+            
+        }
     </script>
 </body>
 </html>

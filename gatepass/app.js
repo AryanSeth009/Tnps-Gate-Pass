@@ -4190,7 +4190,17 @@ app.post('/student/requestpass', verifyStudentJwt, function (req, res) {
           (uid, passtype, expected_out, expected_return, reason, emergency_contact, status, created_at) 
           VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW())`;
 
-        var expectedOut = expectedOutDate + ' ' + expectedOutTime;
+        // For City Pass, lock expected out date to server's current date to prevent tampering.
+        var finalExpectedOutDate = expectedOutDate;
+        if (passType === 'City Pass'){
+          var now = new Date();
+          var yyyy = now.getFullYear();
+          var mm = String(now.getMonth() + 1).padStart(2, '0');
+          var dd = String(now.getDate()).padStart(2, '0');
+          finalExpectedOutDate = yyyy + '-' + mm + '-' + dd;
+        }
+
+        var expectedOut = finalExpectedOutDate + ' ' + expectedOutTime;
         var expectedReturn = expectedReturnDate + ' ' + (expectedReturnTime || '18:00');
 
         connection.query(insertSql, [uid, passType, expectedOut, expectedReturn, reason, emergencyContact], function (err, insertResult) {
@@ -4480,6 +4490,56 @@ app.post('/admin/rejectrequest/:id', verifyjwt, function (req, res) {
           connection.query(notifSql, [request.uid, notifMsg], function (err, notifResult) {
             connection.release();
             req.flash('message', 'Pass request rejected');
+            res.redirect('/admin/passrequests');
+          });
+        });
+      });
+    });
+  } catch (err) {
+    res.clearCookie("jwt");
+    req.flash('message', 'Session expired');
+    return res.redirect('/loginpanel');
+  }
+});
+
+// Admin - Reset Pass Request (clear approval/rejection and set to pending)
+app.post('/admin/resetrequest/:id', verifyjwt, function (req, res) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    const adminName = decode.adminname;
+    const requestId = req.params.id;
+
+    dbbconnection.getConnection(function (err, connection) {
+      if (err) {
+        req.flash('message', 'Database error');
+        return res.redirect('/admin/passrequests');
+      }
+
+      // Ensure request exists and is not already pending
+      var getRequestSql = "SELECT * FROM pass_requests WHERE requestid = ? AND status != 'pending'";
+      connection.query(getRequestSql, [requestId], function (err, requestResult) {
+        if (err || requestResult.length === 0) {
+          connection.release();
+          req.flash('message', 'Request not found or already pending');
+          return res.redirect('/admin/passrequests');
+        }
+
+        // Reset status and clear approval/rejection fields
+        var updateSql = "UPDATE pass_requests SET status = 'pending', approved_by = NULL, approved_at = NULL, rejection_reason = NULL WHERE requestid = ?";
+        connection.query(updateSql, [requestId], function (err, updateResult) {
+          if (err) {
+            connection.release();
+            req.flash('message', 'Error resetting request');
+            return res.redirect('/admin/passrequests');
+          }
+
+          // Notify student about reset
+          var notifSql = `INSERT INTO student_notifications (uid, type, title, message, created_at) VALUES (?, 'pass_reset', 'Pass Request Reset', ?, NOW())`;
+          var notifMsg = `Your pass request #${requestId} has been reset to pending by ${adminName}.`;
+          connection.query(notifSql, [requestResult[0].uid, notifMsg], function (err, notifResult) {
+            connection.release();
+            req.flash('message', 'Request reset to pending');
             res.redirect('/admin/passrequests');
           });
         });

@@ -180,7 +180,7 @@
                     
                     <div class="form-group">
                         <label><i class="fas fa-ticket-alt"></i> Pass Type *</label>
-                        <select name="passType" required>
+                        <select id="passType" name="passType" required>
                             <option value="">Select Pass Type</option>
                             <option value="City Pass">City Pass (Short Duration)</option>
                             <option value="Home Pass">Home Pass (Long Duration)</option>
@@ -190,7 +190,7 @@
                     <div class="form-row">
                         <div class="form-group">
                             <label><i class="fas fa-calendar"></i> Expected Out Date *</label>
-                            <input type="date" name="expectedOutDate" required min="<%= new Date().toISOString().split('T')[0] %>">
+                            <input type="date" id="expectedOutDate" name="expectedOutDate" required min="<%= new Date().toISOString().split('T')[0] %>">
                         </div>
                         <div class="form-group">
                             <label><i class="fas fa-clock"></i> Expected Out Time *</label>
@@ -441,7 +441,27 @@
             (function(){
                 function formatDateString(s, dateOnly) {
                     try {
-                        var d = new Date(s);
+                        if (!s) return s;
+
+                        // If the string looks like MySQL DATETIME (YYYY-MM-DD HH:MM:SS) or similar,
+                        // parse components and construct a local Date to preserve the stored local time.
+                        var mysqlLike = /^\s*(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?/;
+                        var m = typeof s === 'string' && s.match(mysqlLike);
+                        var d;
+                        // If the string contains timezone info (Z or +/-HH:MM) prefer Date parsing
+                        var hasTZ = typeof s === 'string' && /Z|[+-]\d{2}:?\d{2}/.test(s);
+                        if (m && !hasTZ) {
+                            var year = parseInt(m[1], 10);
+                            var month = parseInt(m[2], 10) - 1;
+                            var day = parseInt(m[3], 10);
+                            var hour = parseInt(m[4], 10);
+                            var minute = parseInt(m[5], 10);
+                            var second = parseInt(m[6] || '0', 10);
+                            d = new Date(year, month, day, hour, minute, second);
+                        } else {
+                            d = new Date(s);
+                        }
+
                         if (isNaN(d.getTime())) return s;
                         if (dateOnly) {
                             var opts = { year: 'numeric', month: 'short', day: 'numeric' };
@@ -464,6 +484,49 @@
                     });
                 });
             })();
+        </script>
+        <script>
+            // Lock Expected Out Date to today when Pass Type is City Pass (client-side UX)
+            document.addEventListener('DOMContentLoaded', function(){
+                var passType = document.getElementById('passType');
+                var outDate = document.getElementById('expectedOutDate');
+                if (!passType || !outDate) return;
+
+                function todayISO(){
+                    var d = new Date();
+                    return d.toISOString().split('T')[0];
+                }
+
+                function applyLock(){
+                    var form = outDate.closest('form');
+                    var hiddenId = 'hidden_expectedOutDate';
+                    if (passType.value === 'City Pass'){
+                        var today = todayISO();
+                        outDate.value = today;
+                        outDate.disabled = true;
+
+                        // ensure hidden input is present so value is submitted
+                        var existing = document.getElementById(hiddenId);
+                        if (!existing) {
+                            existing = document.createElement('input');
+                            existing.type = 'hidden';
+                            existing.id = hiddenId;
+                            existing.name = outDate.name;
+                            form.appendChild(existing);
+                        }
+                        existing.value = today;
+                    } else {
+                        outDate.disabled = false;
+                        // remove hidden input if present
+                        var existing = document.getElementById(hiddenId);
+                        if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+                    }
+                }
+
+                passType.addEventListener('change', applyLock);
+                // initialize on load
+                applyLock();
+            });
         </script>
 </body>
 </html>
