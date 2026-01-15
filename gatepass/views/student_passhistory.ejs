@@ -14,22 +14,34 @@
 
             text-decoration: none;
         }
-    </style>
-</head>
-<body>
-    <!-- Mobile Menu Toggle -->
-    <button class="menu-toggle" onclick="toggleSidebar()">
-        <i class="fas fa-bars"></i>
-    </button>
-    
-    <!-- Sidebar Overlay -->
-    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
-    
-    <!-- Sidebar -->
-    <div class="sidebar">
-        <button class="sidebar-close" onclick="toggleSidebar()">
-            <i class="fas fa-times"></i>
-        </button>
+                    <div>
+                        <label style="opacity: 0.7; font-size: 12px;">Approval Date</label>
+                        <p style="font-size: 16px; font-weight: 500;"> <% if(activePass.approvaldt){ %>
+                            <span class="dt-format" data-date="<%= activePass.approvaldt %>" data-date-only="true"></span>
+                        <% } else { %>
+                            N/A
+                        <% } %></p>
+                    </div>
+                    <div>
+                        <label style="opacity: 0.7; font-size: 12px;">Gate Out</label>
+                        <p style="font-size: 16px; font-weight: 500;"> <% if(activePass.outdatetime){ %>
+                            <span class="dt-format" data-date="<%= activePass.outdatetime %>"></span>
+                        <% } else { %>
+                            Not yet
+                        <% } %></p>
+                    </div>
+                    <div>
+                        <label style="opacity: 0.7; font-size: 12px;">Hostel In</label>
+                        <p style="font-size: 16px; font-weight: 500;"> <% if(activePass.hostelintime){ %>
+                            <span class="dt-format" data-date="<%= activePass.hostelintime %>"></span>
+                        <% } else { %>
+                            Pending
+                        <% } %></p>
+                    </div>
+                    <div>
+                        <label style="opacity: 0.7; font-size: 12px;">Approved By</label>
+                        <p style="font-size: 16px; font-weight: 500;"><%= activePass.hosteloutauth || 'N/A' %></p>
+                    </div>
         <div class="logo">
             <img src="/images/4174.png" alt="Logo">
             <h2>Gate Pass</h2>
@@ -247,10 +259,34 @@
                                         <%= pass.passtype || 'N/A' %>
                                     </span>
                                 </td>
-                                <td><%= pass.approvaldt || 'N/A' %></td>
-                                <td><%= pass.outdatetime || '-' %></td>
-                                <td><%= pass.indatetime || '-' %></td>
-                                <td><%= pass.hostelintime || '-' %></td>
+                                <td>
+                                    <% if(pass.approvaldt){ %>
+                                        <span class="dt-format" data-date="<%= pass.approvaldt %>" data-date-only="true"></span>
+                                    <% } else { %>
+                                        N/A
+                                    <% } %>
+                                </td>
+                                <td>
+                                    <% if(pass.outdatetime){ %>
+                                        <span class="dt-format" data-date="<%= pass.outdatetime %>"></span>
+                                    <% } else { %>
+                                        -
+                                    <% } %>
+                                </td>
+                                <td>
+                                    <% if(pass.indatetime){ %>
+                                        <span class="dt-format" data-date="<%= pass.indatetime %>"></span>
+                                    <% } else { %>
+                                        -
+                                    <% } %>
+                                </td>
+                                <td>
+                                    <% if(pass.hostelintime){ %>
+                                        <span class="dt-format" data-date="<%= pass.hostelintime %>"></span>
+                                    <% } else { %>
+                                        -
+                                    <% } %>
+                                </td>
                                 <td><%= pass.Duration || pass.Durationh || 'N/A' %></td>
                                 <td><%= pass.hosteloutauth || 'N/A' %></td>
                                 <td>
