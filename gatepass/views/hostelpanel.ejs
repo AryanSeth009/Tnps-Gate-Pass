@@ -53,42 +53,58 @@
         }
 
         function dateFormat(input_D) {
-            // input date parsed
-            format_D = 'dd-MM-yyyy';
-            const Time = input_D.split(" ", 3);
-            const date = new Date(input_D);
-
-            //extracting parts of date string
-            const day = date.getDate();
-            const month = date.getMonth() + 1;
-            const year = date.getFullYear();
-
-
-            //to replace month
-            format_D = format_D.replace("MM", month.toString().padStart(2, "0"));
-
-            //to replace year
-            if (format_D.indexOf("yyyy") > -1) {
-                format_D = format_D.replace("yyyy", year.toString());
-            } else if (format_D.indexOf("yy") > -1) {
-                format_D = format_D.replace("yy", year.toString().substr(2, 2));
+            // Check if input is null, undefined, empty, or invalid
+            if (!input_D || input_D === 'null' || input_D === 'undefined' || input_D.trim() === '') {
+                return '';
             }
+            
+            try {
+                // input date parsed
+                format_D = 'dd-MM-yyyy';
+                const Time = input_D.split(" ", 3);
+                const date = new Date(input_D);
 
-            //to replace day
-            format_D = format_D.replace("dd", day.toString().padStart(2, "0"));
+                // Check if date is valid
+                if (isNaN(date.getTime())) {
+                    return '';
+                }
 
-            return format_D + " " + Time[2];
+                //extracting parts of date string
+                const day = date.getDate();
+                const month = date.getMonth() + 1;
+                const year = date.getFullYear();
 
 
+                //to replace month
+                format_D = format_D.replace("MM", month.toString().padStart(2, "0"));
+
+                //to replace year
+                if (format_D.indexOf("yyyy") > -1) {
+                    format_D = format_D.replace("yyyy", year.toString());
+                } else if (format_D.indexOf("yy") > -1) {
+                    format_D = format_D.replace("yy", year.toString().substr(2, 2));
+                }
+
+                //to replace day
+                format_D = format_D.replace("dd", day.toString().padStart(2, "0"));
+
+                // Return formatted date with time (if available)
+                return format_D + (Time[2] ? " " + Time[2] : "");
+            } catch (e) {
+                console.error('Date formatting error:', e, 'Input:', input_D);
+                return '';
+            }
         }
 
         window.onload = function () {
             var approvalDates = document.getElementsByClassName("approvalDate");
             for (var i = 0; i < approvalDates.length; i++) {
-                if (approvalDates[i].innerHTML == 0) {
+                var content = approvalDates[i].innerHTML.trim();
+                if (!content || content === '0' || content === 'null' || content === 'undefined') {
                     approvalDates[i].innerHTML = "";
                 } else {
-                    approvalDates[i].innerHTML = dateFormat(approvalDates[i].innerHTML);
+                    var formatted = dateFormat(content);
+                    approvalDates[i].innerHTML = formatted || "";
                 }
             }
         };

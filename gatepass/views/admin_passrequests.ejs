@@ -294,11 +294,19 @@
                         </div>
                         <div class="request-detail">
                             <label>Expected Out</label>
-                            <span class="dt-format-admin" data-date="<%= req.expected_out %>"><%= req.expected_out %></span>
+                            <% if(req.expected_out) { %>
+                                <span class="dt-format-admin" data-date="<%= req.expected_out %>"><%= req.expected_out %></span>
+                            <% } else { %>
+                                <span>N/A</span>
+                            <% } %>
                         </div>
                         <div class="request-detail">
                             <label>Expected Return</label>
-                            <span class="dt-format-admin" data-date="<%= req.expected_return %>"><%= req.expected_return %></span>
+                            <% if(req.expected_return) { %>
+                                <span class="dt-format-admin" data-date="<%= req.expected_return %>"><%= req.expected_return %></span>
+                            <% } else { %>
+                                <span>N/A</span>
+                            <% } %>
                         </div>
                         <div class="request-detail">
                             <label>Emergency Contact</label>
@@ -505,8 +513,16 @@
                 var els = document.querySelectorAll('.dt-format-admin');
                 els.forEach(function(el){
                     var s = el.getAttribute('data-date');
-                    if (!s) return;
-                    el.textContent = formatDateString(s);
+                    if (!s || s === 'null' || s === 'undefined' || s.trim() === '') {
+                        el.textContent = 'N/A';
+                        return;
+                    }
+                    var formatted = formatDateString(s);
+                    if (formatted && formatted !== s) {
+                        el.textContent = formatted;
+                    } else if (!formatted || formatted === '') {
+                        el.textContent = 'N/A';
+                    }
                 });
             });
         })();

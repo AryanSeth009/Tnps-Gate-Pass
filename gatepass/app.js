@@ -2097,30 +2097,72 @@ app.post('/codescanner/:uid', async function (req, res) {
         else if (result[0].category == 'Hostel') {
           if (!req.body.buttonout == 0)//out
           {
-            var statusquery = "Select * from log_details1 where logid=(Select max(logid) from log_details1 where uid='" + uid + "' and status='ACTIVE' )";
-            connection.query(statusquery, function (err, result) {
+            // First check for approved pass request - if exists, create pass record now (mandatory scanning)
+            var checkApprovedRequestSql = "SELECT * FROM pass_requests WHERE uid = ? AND status = 'approved' AND DATE(approved_at) = CURDATE() ORDER BY requestid DESC LIMIT 1";
+            connection.query(checkApprovedRequestSql, [uid], function (err, approvedRequest) {
               if (err) throw err;
-              else if (result.length == 0) {
-                req.flash('message', 'Hostel Pass is not generated');
-                res.redirect('/homepage');
-              }
-              else if (result[0].status == 'ACTIVE') {
-                var updatesql1 = "Update log_details1 set outdatetime='" + datetime(currentdate()) + "',status='DEAD' where logid='" + result[0].logid + "'";
-                connection.query(updatesql1, function (err, result) {
+              
+              // If there's an approved request but no pass record yet, create it now (scanning is mandatory)
+              if (approvedRequest && approvedRequest.length > 0) {
+                var statusquery = "Select * from log_details1 where logid=(Select max(logid) from log_details1 where uid='" + uid + "' and status='ACTIVE' )";
+                connection.query(statusquery, function (err, passResult) {
                   if (err) throw err;
+                  
+                  // If no ACTIVE pass exists, create it from the approved request (scanning is mandatory)
+                  if (!passResult || passResult.length == 0) {
+                    var currentDateTime = datetime(currentdate());
+                    var createPassSql = "INSERT INTO log_details1 (uid, status, approvaldt, passtype, hosteloutauth, outdatetime) VALUES (?, 'DEAD', ?, ?, ?, ?)";
+                    connection.query(createPassSql, [uid, currentDateTime, approvedRequest[0].passtype, approvedRequest[0].approved_by, currentDateTime], function (err, createResult) {
+                      if (err) throw err;
+                      req.flash('message', 'Submitted Successfully - Pass activated and gate out recorded');
+                      res.redirect('/homepage');
+                    });
+                  }
+                  // If ACTIVE pass exists, proceed with normal flow
+                  else if (passResult[0].status == 'ACTIVE') {
+                    var updatesql1 = "Update log_details1 set outdatetime='" + datetime(currentdate()) + "',status='DEAD' where logid='" + passResult[0].logid + "'";
+                    connection.query(updatesql1, function (err, result) {
+                      if (err) throw err;
+                      else {
+                        req.flash('message', 'Submitted Successfully');
+                        res.redirect('/homepage');
+                      }
+                    });
+                  }
                   else {
-                    req.flash('message', 'Submitted Successfully');
+                    req.flash('message', 'Hostel Pass is not generated');
                     res.redirect('/homepage');
                   }
-                })
+                });
               }
-              else if (result[0].status == 'DEAD') {
-                req.flash('message', 'Hostel Pass is not generated');
-                res.redirect('/homepage');
-              }
+              // No approved request - check for existing ACTIVE pass
               else {
-                req.flash('message', 'Failed 401, Contact admin');
-                res.redirect('/homepage');
+                var statusquery = "Select * from log_details1 where logid=(Select max(logid) from log_details1 where uid='" + uid + "' and status='ACTIVE' )";
+                connection.query(statusquery, function (err, result) {
+                  if (err) throw err;
+                  else if (result.length == 0) {
+                    req.flash('message', 'Hostel Pass is not generated or not approved');
+                    res.redirect('/homepage');
+                  }
+                  else if (result[0].status == 'ACTIVE') {
+                    var updatesql1 = "Update log_details1 set outdatetime='" + datetime(currentdate()) + "',status='DEAD' where logid='" + result[0].logid + "'";
+                    connection.query(updatesql1, function (err, result) {
+                      if (err) throw err;
+                      else {
+                        req.flash('message', 'Submitted Successfully');
+                        res.redirect('/homepage');
+                      }
+                    });
+                  }
+                  else if (result[0].status == 'DEAD') {
+                    req.flash('message', 'Hostel Pass is not generated');
+                    res.redirect('/homepage');
+                  }
+                  else {
+                    req.flash('message', 'Failed 401, Contact admin');
+                    res.redirect('/homepage');
+                  }
+                });
               }
             });
           }
@@ -2388,52 +2430,71 @@ function verifyjwt(req, res, next) {
 
 
 app.get('/hostelpanel', verifyjwt, function (req, res) {
-  dbbconnection.getConnection(function (err, connection) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    const role = decode.role;
 
-    if (role == "BoysHostelAdmin") {
-      var sql = "select stu.uid,stu.sname,log.indatetime,log.outdatetime,log.approvaldt,log.hostelintime,log.hosteloutauth,log.passtype,CONCAT(FLOOR((TIMESTAMPDIFF(SECOND, log.outdatetime, log.indatetime) % 86400)/3600), ' hours ',FLOOR((TIMESTAMPDIFF(SECOND, log.outdatetime, log.indatetime) % 3600)/60), ' min ') AS `Duration`,CONCAT(FLOOR((TIMESTAMPDIFF(SECOND, log.approvaldt, log.hostelintime) % 86400)/3600), ' hours ',FLOOR((TIMESTAMPDIFF(SECOND, log.approvaldt, log.hostelintime) % 3600)/60), ' min ') AS `Durationh` from log_details1 as log join studentdetails as stu where stu.uid=log.uid and stu.gender='MALE' and DATE(approvaldt) = '" + convert(datetime(currentdate())) + "' and category='Hostel' ORDER BY log.logid desc";
-      connection.query(sql, function (err, result) {
-        if (err) throw err;
-        else {
+    dbbconnection.getConnection(function (err, connection) {
+      if (err) {
+        req.flash('message', 'Database error');
+        return res.redirect('/loginpanel');
+      }
 
-          res.render(__dirname + '/views/hostelpanel', { result: result, message: req.flash('message'), datetime: convert(datetime(currentdate())) });
-        }
-      });
-    }
-    else if (role == "GirlsHostelAdmin") {
-      var sql = "select stu.uid,stu.sname,log.indatetime,log.outdatetime,log.approvaldt,log.hostelintime,log.hosteloutauth,log.passtype,CONCAT(FLOOR((TIMESTAMPDIFF(SECOND, log.outdatetime, log.indatetime) % 86400)/3600), ' hours ',FLOOR((TIMESTAMPDIFF(SECOND, log.outdatetime, log.indatetime) % 3600)/60), ' min ') AS `Duration`,CONCAT(FLOOR((TIMESTAMPDIFF(SECOND, log.approvaldt, log.hostelintime) % 86400)/3600), ' hours ',FLOOR((TIMESTAMPDIFF(SECOND, log.approvaldt, log.hostelintime) % 3600)/60), ' min ') AS `Durationh` from log_details1 as log join studentdetails as stu where stu.uid=log.uid and stu.gender='FEMALE' and DATE(approvaldt) = '" + convert(datetime(currentdate())) + "' and category='Hostel' ORDER BY log.logid desc";
-      connection.query(sql, function (err, result) {
-        if (err) throw err;
-        else {
+      if (role == "BoysHostelAdmin") {
+        var sql = "select stu.uid,stu.sname,log.indatetime,log.outdatetime,log.approvaldt,log.hostelintime,log.hosteloutauth,log.passtype,CONCAT(FLOOR((TIMESTAMPDIFF(SECOND, log.outdatetime, log.indatetime) % 86400)/3600), ' hours ',FLOOR((TIMESTAMPDIFF(SECOND, log.outdatetime, log.indatetime) % 3600)/60), ' min ') AS `Duration`,CONCAT(FLOOR((TIMESTAMPDIFF(SECOND, log.approvaldt, log.hostelintime) % 86400)/3600), ' hours ',FLOOR((TIMESTAMPDIFF(SECOND, log.approvaldt, log.hostelintime) % 3600)/60), ' min ') AS `Durationh` from log_details1 as log join studentdetails as stu where stu.uid=log.uid and stu.gender='MALE' and DATE(approvaldt) = '" + convert(datetime(currentdate())) + "' and category='Hostel' ORDER BY log.logid desc";
+        connection.query(sql, function (err, result) {
+          if (err) throw err;
+          else {
+            res.render(__dirname + '/views/hostelpanel', { result: result, message: req.flash('message'), datetime: convert(datetime(currentdate())) });
+          }
+        });
+      }
+      else if (role == "GirlsHostelAdmin") {
+        var sql = "select stu.uid,stu.sname,log.indatetime,log.outdatetime,log.approvaldt,log.hostelintime,log.hosteloutauth,log.passtype,CONCAT(FLOOR((TIMESTAMPDIFF(SECOND, log.outdatetime, log.indatetime) % 86400)/3600), ' hours ',FLOOR((TIMESTAMPDIFF(SECOND, log.outdatetime, log.indatetime) % 3600)/60), ' min ') AS `Duration`,CONCAT(FLOOR((TIMESTAMPDIFF(SECOND, log.approvaldt, log.hostelintime) % 86400)/3600), ' hours ',FLOOR((TIMESTAMPDIFF(SECOND, log.approvaldt, log.hostelintime) % 3600)/60), ' min ') AS `Durationh` from log_details1 as log join studentdetails as stu where stu.uid=log.uid and stu.gender='FEMALE' and DATE(approvaldt) = '" + convert(datetime(currentdate())) + "' and category='Hostel' ORDER BY log.logid desc";
+        connection.query(sql, function (err, result) {
+          if (err) throw err;
+          else {
+            res.render(__dirname + '/views/hostelpanel', { result: result, message: req.flash('message'), datetime: convert(datetime(currentdate())) });
+          }
+        });
+      }
+      else if (role == "SuperID") {
+        var sql = "select stu.uid,stu.sname,log.indatetime,log.outdatetime,log.approvaldt,log.hostelintime,log.hosteloutauth,log.passtype,CONCAT(FLOOR((TIMESTAMPDIFF(SECOND, log.outdatetime, log.indatetime) % 86400)/3600), ' hours ',FLOOR((TIMESTAMPDIFF(SECOND, log.outdatetime, log.indatetime) % 3600)/60), ' min ') AS `Duration`,CONCAT(FLOOR((TIMESTAMPDIFF(SECOND, log.approvaldt, log.hostelintime) % 86400)/3600), ' hours ',FLOOR((TIMESTAMPDIFF(SECOND, log.approvaldt, log.hostelintime) % 3600)/60), ' min ') AS `Durationh` from log_details1 as log join studentdetails as stu where stu.uid=log.uid and ( DATE(outdatetime) = '" + convert(datetime(currentdate())) + "' or DATE(approvaldt) = '" + convert(datetime(currentdate())) + "') ORDER BY log.logid desc";
+        connection.query(sql, function (err, result) {
+          if (err) throw err;
+          else {
+            res.render(__dirname + '/views/hostelpanel', { result: result, message: req.flash('message'), datetime: convert(datetime(currentdate())) });
+          }
+        });
+      }
+      else {
+        req.flash('message', 'Unauthorised Access');
+        res.redirect('/loginpanel');
+      }
 
-          res.render(__dirname + '/views/hostelpanel', { result: result, message: req.flash('message'), datetime: convert(datetime(currentdate())) });
-        }
-      });
-    }
-    else if (role == "SuperID") {
-      var sql = "select stu.uid,stu.sname,log.indatetime,log.outdatetime,log.approvaldt,log.hostelintime,log.hosteloutauth,log.passtype,CONCAT(FLOOR((TIMESTAMPDIFF(SECOND, log.outdatetime, log.indatetime) % 86400)/3600), ' hours ',FLOOR((TIMESTAMPDIFF(SECOND, log.outdatetime, log.indatetime) % 3600)/60), ' min ') AS `Duration`,CONCAT(FLOOR((TIMESTAMPDIFF(SECOND, log.approvaldt, log.hostelintime) % 86400)/3600), ' hours ',FLOOR((TIMESTAMPDIFF(SECOND, log.approvaldt, log.hostelintime) % 3600)/60), ' min ') AS `Durationh` from log_details1 as log join studentdetails as stu where stu.uid=log.uid and ( DATE(outdatetime) = '" + convert(datetime(currentdate())) + "' or DATE(approvaldt) = '" + convert(datetime(currentdate())) + "') ORDER BY log.logid desc";
-      connection.query(sql, function (err, result) {
-        if (err) throw err;
-        else {
-
-          res.render(__dirname + '/views/hostelpanel', { result: result, message: req.flash('message'), datetime: convert(datetime(currentdate())) });
-        }
-      });
-    }
-    else {
-      req.flash('message', 'Unauthorised Access');
-      res.redirect('/loginpanel');
-    }
-
-    connection.release();
-  });
-
+      connection.release();
+    });
+  } catch (err) {
+    res.clearCookie("jwt");
+    req.flash('message', 'Login failed');
+    return res.redirect('/loginpanel');
+  }
 });
 
 app.get('/CollegeLate', verifyjwt, function (req, res) {
-  dbbconnection.getConnection(function (err, connection) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    const role = decode.role;
 
-    if (role == "BoysHostelAdmin") {
+    dbbconnection.getConnection(function (err, connection) {
+      if (err) {
+        req.flash('message', 'Database error');
+        return res.redirect('/loginpanel');
+      }
+
+      if (role == "BoysHostelAdmin") {
       var sql = "select stu.uid,stu.sname,log.indatetime,log.outdatetime,log.approvaldt,log.hostelintime,log.hosteloutauth,log.passtype,CONCAT(FLOOR((TIMESTAMPDIFF(SECOND, log.outdatetime, log.indatetime) % 86400)/3600), ' hours ',FLOOR((TIMESTAMPDIFF(SECOND, log.outdatetime, log.indatetime) % 3600)/60), ' min ') AS `Duration`,CONCAT(FLOOR((TIMESTAMPDIFF(SECOND, log.approvaldt, log.hostelintime) % 86400)/3600), ' hours ',FLOOR((TIMESTAMPDIFF(SECOND, log.approvaldt, log.hostelintime) % 3600)/60), ' min ') AS `Durationh` from log_details1 as log join studentdetails as stu where stu.uid=log.uid and stu.gender='MALE' and DATE(approvaldt) = '" + convert(datetime(currentdate())) + "' and category='Hostel' ORDER BY log.logid desc";
       connection.query(sql, function (err, result) {
         if (err) throw err;
@@ -2465,14 +2526,18 @@ app.get('/CollegeLate', verifyjwt, function (req, res) {
         }
       });
     }
-    else {
-      req.flash('message', 'Unauthorised Access');
-      res.redirect('/loginpanel');
-    }
+      else {
+        req.flash('message', 'Unauthorised Access');
+        res.redirect('/loginpanel');
+      }
 
-    connection.release();
-  });
-
+      connection.release();
+    });
+  } catch (err) {
+    res.clearCookie("jwt");
+    req.flash('message', 'Login failed');
+    return res.redirect('/loginpanel');
+  }
 });
 
 app.get('/studentprofile/:uid', verifyjwt, function (req, res) {
@@ -3913,6 +3978,93 @@ app.get('/student/notifications', verifyStudentJwt, function (req, res) {
   });
 });
 
+// Student Sick Leave Request
+app.get('/student/sickleave', verifyStudentJwt, function (req, res) {
+  const uid = req.studentUid;
+
+  dbbconnection.getConnection(function (err, connection) {
+    if (err) {
+      req.flash('message', 'Database error');
+      return res.redirect('/student/dashboard');
+    }
+
+    // Get student details
+    var studentSql = "SELECT * FROM studentdetails WHERE uid = ?";
+    connection.query(studentSql, [uid], function (err, studentResult) {
+      connection.release();
+      if (err || studentResult.length === 0) {
+        req.flash('message', 'Student not found');
+        return res.redirect('/student/dashboard');
+      }
+
+      const student = studentResult[0];
+
+      res.render(__dirname + '/views/student_sickleave_request', {
+        student: student,
+        message: req.flash('message')
+      });
+    });
+  });
+});
+
+// Student Submit Sick Leave Request
+app.post('/student/sickleave', verifyStudentJwt, function (req, res) {
+  const uid = req.studentUid;
+  const { illness, other_illness, details } = req.body;
+
+  dbbconnection.getConnection(function (err, connection) {
+    if (err) {
+      req.flash('message', 'Database error');
+      return res.redirect('/student/sickleave');
+    }
+
+    // Check if student is restricted
+    var checkSql = "SELECT status FROM studentdetails WHERE uid = ?";
+    connection.query(checkSql, [uid], function (err, checkResult) {
+      if (err || checkResult.length === 0 || checkResult[0].status === 'Restrict') {
+        connection.release();
+        req.flash('message', 'Cannot submit request. Account may be restricted.');
+        return res.redirect('/student/sickleave');
+      }
+
+      // Determine the illness value (use other_illness if provided, otherwise use illness)
+      var finalIllness = other_illness && other_illness.trim() ? other_illness.trim() : (illness || 'Not specified');
+
+      // Check for existing pending request today
+      var checkPendingSql = "SELECT * FROM sick_leave_requests WHERE uid = ? AND status = 'pending' AND DATE(created_at) = CURDATE()";
+      connection.query(checkPendingSql, [uid], function (err, pendingResult) {
+        if (pendingResult && pendingResult.length > 0) {
+          connection.release();
+          req.flash('message', 'You already have a pending sick leave request for today');
+          return res.redirect('/student/sickleave');
+        }
+
+        // Insert sick leave request
+        var insertSql = `
+          INSERT INTO sick_leave_requests 
+          (uid, illness, details, status, created_at) 
+          VALUES (?, ?, ?, 'pending', NOW())`;
+
+        connection.query(insertSql, [uid, finalIllness, details || null], function (err, insertResult) {
+          connection.release();
+          if (err) {
+            // If table doesn't exist, create it
+            if (err.code === 'ER_NO_SUCH_TABLE') {
+              req.flash('message', 'Sick leave request feature is being set up. Please contact admin.');
+            } else {
+              req.flash('message', 'Error submitting request');
+            }
+            return res.redirect('/student/sickleave');
+          }
+
+          req.flash('message', 'Sick leave request submitted successfully! Awaiting approval.');
+          res.redirect('/student/sickleave');
+        });
+      });
+    });
+  });
+});
+
 // Student Logout
 app.get('/student/logout', function (req, res) {
   res.clearCookie('studentjwt');
@@ -3947,9 +4099,15 @@ app.get('/admin/passrequests', verifyjwt, function (req, res) {
         return res.redirect('/daterange');
       }
 
-      // Build query based on role
+      // Build query based on role - format dates consistently
       let baseSql = `
-        SELECT pr.*, sd.sname, sd.dept, sd.mobileno, sd.gender 
+        SELECT pr.requestid, pr.uid, pr.passtype, pr.status, pr.reason, pr.emergency_contact,
+               DATE_FORMAT(pr.expected_out, '%Y-%m-%d %H:%i:%s') as expected_out,
+               DATE_FORMAT(pr.expected_return, '%Y-%m-%d %H:%i:%s') as expected_return,
+               DATE_FORMAT(pr.created_at, '%Y-%m-%d %H:%i:%s') as created_at,
+               DATE_FORMAT(pr.approved_at, '%Y-%m-%d %H:%i:%s') as approved_at,
+               pr.approved_by, pr.rejection_reason,
+               sd.sname, sd.dept, sd.mobileno, sd.gender 
         FROM pass_requests pr 
         LEFT JOIN studentdetails sd ON pr.uid = sd.uid 
         WHERE 1=1`;
@@ -4040,23 +4198,19 @@ app.post('/admin/approverequest/:id', verifyjwt, function (req, res) {
             return res.redirect('/admin/passrequests');
           }
 
-          // Create the actual pass in log_details1
-          var createPassSql = `
-            INSERT INTO log_details1 (uid, status, approvaldt, passtype, hosteloutauth) 
-            VALUES (?, 'ACTIVE', NOW(), ?, ?)`;
+          // Don't create pass yet - it will be created when student scans at gate
+          // This ensures scanning is mandatory before gate out
           
-          connection.query(createPassSql, [request.uid, request.passtype, adminName], function (err, passResult) {
-            // Add notification for student
-            var notifSql = `
-              INSERT INTO student_notifications (uid, type, title, message, created_at) 
-              VALUES (?, 'pass_approved', 'Pass Request Approved', ?, NOW())`;
-            var notifMsg = `Your ${request.passtype} request has been approved by ${adminName}. Please collect your pass from the hostel office.`;
-            
-            connection.query(notifSql, [request.uid, notifMsg], function (err, notifResult) {
-              connection.release();
-              req.flash('message', 'Pass request approved and pass generated successfully');
-              res.redirect('/admin/passrequests');
-            });
+          // Add notification for student
+          var notifSql = `
+            INSERT INTO student_notifications (uid, type, title, message, created_at) 
+            VALUES (?, 'pass_approved', 'Pass Request Approved', ?, NOW())`;
+          var notifMsg = `Your ${request.passtype} request has been approved by ${adminName}. Please scan your ID at the gate to activate your pass.`;
+          
+          connection.query(notifSql, [request.uid, notifMsg], function (err, notifResult) {
+            connection.release();
+            req.flash('message', 'Pass request approved. Student must scan ID at gate to activate pass.');
+            res.redirect('/admin/passrequests');
           });
         });
       });
