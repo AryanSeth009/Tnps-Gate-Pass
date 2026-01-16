@@ -10,7 +10,6 @@
     <link rel="icon" href="/images/4174.png">
     <style>
         body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
         }
@@ -63,6 +62,24 @@
             padding: 20px;
             border-radius: 12px;
             text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            user-select: none;
+        }
+        .stat-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+        }
+        .stat-card.clickable-stat {
+            cursor: pointer;
+            position: relative;
+        }
+        .stat-card.clickable-stat:active {
+            transform: translateY(-1px);
+        }
+        .stat-card.clickable-stat.active {
+            border: 3px solid rgba(255,255,255,0.6);
+            box-shadow: 0 0 0 3px rgba(255,255,255,0.2);
         }
         .stat-card.pending { background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); }
         .stat-card.approved { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); }
@@ -205,19 +222,19 @@
         
         <!-- Statistics -->
         <div class="stats-cards">
-            <div class="stat-card pending">
+            <div class="stat-card pending clickable-stat" data-status="pending" onclick="filterByStatus('pending')">
                 <h3><%= stats.pending || 0 %></h3>
                 <p>Pending Requests</p>
             </div>
-            <div class="stat-card approved">
+            <div class="stat-card approved clickable-stat" data-status="approved" onclick="filterByStatus('approved')">
                 <h3><%= stats.approved || 0 %></h3>
                 <p>Approved Today</p>
             </div>
-            <div class="stat-card rejected">
+            <div class="stat-card rejected clickable-stat" data-status="rejected" onclick="filterByStatus('rejected')">
                 <h3><%= stats.rejected || 0 %></h3>
                 <p>Rejected Today</p>
             </div>
-            <div class="stat-card">
+            <div class="stat-card clickable-stat" data-status="" onclick="filterByStatus('')">
                 <h3><%= stats.total || 0 %></h3>
                 <p>Total Requests</p>
             </div>
@@ -259,7 +276,7 @@
                     <div class="request-header">
                         <div>
                             <h4><%= req.sname %> (<%= req.uid %>)</h4>
-                            <small style="color: #888;">Request #<%= req.requestid %> • <%= req.created_at %></small>
+                            <small style="color: #888;">Request #<%= req.requestid %> • <span class="dt-format-admin" data-date="<%= req.created_at %>"><%= req.created_at %></span></small>
                         </div>
                         <span class="badge bg-<%= req.status === 'pending' ? 'warning' : (req.status === 'approved' ? 'success' : 'danger') %>">
                             <%= req.status.charAt(0).toUpperCase() + req.status.slice(1) %>
@@ -277,11 +294,11 @@
                         </div>
                         <div class="request-detail">
                             <label>Expected Out</label>
-                            <span><%= req.expected_out %></span>
+                            <span class="dt-format-admin" data-date="<%= req.expected_out %>"><%= req.expected_out %></span>
                         </div>
                         <div class="request-detail">
                             <label>Expected Return</label>
-                            <span><%= req.expected_return %></span>
+                            <span class="dt-format-admin" data-date="<%= req.expected_return %>"><%= req.expected_return %></span>
                         </div>
                         <div class="request-detail">
                             <label>Emergency Contact</label>
@@ -316,7 +333,7 @@
                         <div style="font-size: 13px; color: #888; padding-top: 10px; border-top: 1px solid #eee; display:flex; justify-content:space-between; align-items:center; gap:12px;">
                             <div>
                                 <strong><%= req.status === 'approved' ? 'Approved' : 'Rejected' %> by:</strong> <%= req.approved_by %> 
-                                <% if(req.approved_at) { %>at <%= req.approved_at %><% } %>
+                                <% if(req.approved_at) { %>at <span class="dt-format-admin" data-date="<%= req.approved_at %>"><%= req.approved_at %></span><% } %>
                                 <% if(req.rejection_reason) { %><br><strong>Reason:</strong> <%= req.rejection_reason %><% } %>
                             </div>
                             <div>
@@ -368,9 +385,131 @@
         })();
     </script>
     <script>
-        function pendingclick (){
+        // Filter requests by status when clicking on stat cards
+        function filterByStatus(status) {
+            // Get current URL parameters
+            const urlParams = new URLSearchParams(window.location.search);
             
+            // Update or remove status parameter
+            if (status) {
+                urlParams.set('status', status);
+            } else {
+                urlParams.delete('status');
+            }
+            
+            // Remove fromDate and toDate to show all requests for the selected status
+            urlParams.delete('fromDate');
+            urlParams.delete('toDate');
+            
+            // Redirect to the filtered page
+            window.location.href = '/admin/passrequests?' + urlParams.toString();
         }
+        
+        // Highlight the active stat card based on current filter
+        document.addEventListener('DOMContentLoaded', function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const currentStatus = urlParams.get('status') || '';
+            
+            // Remove active class from all stat cards
+            document.querySelectorAll('.clickable-stat').forEach(card => {
+                card.classList.remove('active');
+            });
+            
+            // Highlight the active stat card
+            if (currentStatus) {
+                const activeCard = document.querySelector(`.clickable-stat[data-status="${currentStatus}"]`);
+                if (activeCard) {
+                    activeCard.classList.add('active');
+                }
+            } else {
+                // Highlight "Total Requests" if no filter
+                const totalCard = document.querySelector('.clickable-stat[data-status=""]');
+                if (totalCard) {
+                    totalCard.classList.add('active');
+                }
+            }
+        });
+    </script>
+    <script>
+        // Format dates in 12-hour format (AM/PM) without timezone info
+        (function(){
+            function formatDateString(s) {
+                try {
+                    if (!s) return s;
+                    
+                    // Trim whitespace and normalize the string
+                    s = String(s).trim();
+                    
+                    // MySQL DATETIME format: YYYY-MM-DD HH:MM:SS or YYYY-MM-DD HH:MM
+                    // Parse manually to ensure LOCAL time interpretation (not UTC)
+                    var mysqlLike = /^(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(?:\s*[Z+-]|$)/;
+                    var m = s.match(mysqlLike);
+                    
+                    var d;
+                    if (m) {
+                        // Extract components and create LOCAL Date object (not UTC)
+                        var year = parseInt(m[1], 10);
+                        var month = parseInt(m[2], 10) - 1; // JavaScript months are 0-indexed
+                        var day = parseInt(m[3], 10);
+                        var hour = parseInt(m[4], 10);
+                        var minute = parseInt(m[5], 10);
+                        var second = parseInt(m[6] || '0', 10);
+                        
+                        // Create Date in LOCAL timezone
+                        d = new Date(year, month, day, hour, minute, second);
+                    } else {
+                        // Fallback: try standard Date parsing
+                        var normalized = s.replace(' ', 'T');
+                        if (!normalized.includes('Z') && !normalized.match(/[+-]\d{2}:\d{2}$/)) {
+                            var fallbackMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/);
+                            if (fallbackMatch) {
+                                d = new Date(
+                                    parseInt(fallbackMatch[1], 10),
+                                    parseInt(fallbackMatch[2], 10) - 1,
+                                    parseInt(fallbackMatch[3], 10),
+                                    parseInt(fallbackMatch[4], 10),
+                                    parseInt(fallbackMatch[5], 10),
+                                    parseInt(fallbackMatch[6] || '0', 10)
+                                );
+                            } else {
+                                d = new Date(s);
+                            }
+                        } else {
+                            d = new Date(s);
+                        }
+                    }
+
+                    if (isNaN(d.getTime())) {
+                        console.warn('Invalid date:', s);
+                        return s;
+                    }
+                    
+                    // Format in 12-hour format: "Jan 16, 2026, 9:01:00 AM" (no timezone)
+                    var opts = { 
+                        year: 'numeric', 
+                        month: 'short', 
+                        day: 'numeric', 
+                        hour: 'numeric', 
+                        minute: '2-digit', 
+                        second: '2-digit', 
+                        hour12: true 
+                    };
+                    return d.toLocaleString(undefined, opts);
+                } catch (e) {
+                    console.error('Date formatting error:', e, 'for string:', s);
+                    return s;
+                }
+            }
+
+            document.addEventListener('DOMContentLoaded', function(){
+                var els = document.querySelectorAll('.dt-format-admin');
+                els.forEach(function(el){
+                    var s = el.getAttribute('data-date');
+                    if (!s) return;
+                    el.textContent = formatDateString(s);
+                });
+            });
+        })();
     </script>
 </body>
 </html>

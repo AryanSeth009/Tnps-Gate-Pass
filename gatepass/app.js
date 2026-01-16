@@ -48,9 +48,9 @@ var job = new CronJob('0 0 * * *', function() {
 
 );
 
-//Auto Reset Pass Requests Daily at 7 AM
-var resetPassRequestsJob = new CronJob('0 7 * * *', function() {
-  console.log('Running daily pass request reset at 7 AM...');
+//Auto Reset Pass Requests Daily at 6 AM
+var resetPassRequestsJob = new CronJob('0 6 * * *', function() {
+  console.log('Running daily pass request reset at 6 AM...');
   
   dbbconnection.getConnection(function (err, connection) {
     if (err) {
@@ -58,31 +58,26 @@ var resetPassRequestsJob = new CronJob('0 7 * * *', function() {
       return;
     }
     
-    // Reset all approved/rejected requests from previous days back to pending
-    // This clears approval/rejection info and sets status back to pending
+    // Reset ALL pass requests from previous days - delete old requests
+    // This ensures the admin page starts fresh each day after 6 AM
+    // Total request count will automatically reset since old requests are deleted
     var resetSql = `
-      UPDATE pass_requests 
-      SET status = 'pending', 
-          approved_by = NULL, 
-          approved_at = NULL, 
-          rejection_reason = NULL,
-          updated_at = NOW()
-      WHERE DATE(created_at) < CURDATE() 
-      AND status IN ('approved', 'rejected')
+      DELETE FROM pass_requests 
+      WHERE DATE(created_at) < CURDATE()
     `;
     
     connection.query(resetSql, function (err, result) {
       if (err) {
         console.error('Error resetting pass requests:', err);
       } else {
-        console.log(`Pass request reset completed. ${result.affectedRows} requests reset to pending.`);
+        console.log(`Pass request reset completed at 6 AM. ${result.affectedRows} requests reset.`);
       }
       connection.release();
     });
   });
   
   /*
-   * Runs every day at 7:00:00 AM.
+   * Runs every day at 6:00:00 AM.
    */
 }, function () {
   /* This function is executed when the job stops */
@@ -3472,6 +3467,7 @@ app.get('/student/profile', verifyStudentJwt, function (req, res) {
 
       res.render(__dirname + '/views/student_profile', {
         student: result[0],
+        result: result,
         message: req.flash('message')
       });
     });
@@ -3719,16 +3715,47 @@ app.get('/student/requestpass', verifyStudentJwt, function (req, res) {
       // Check for active pass
       var activeSql = "SELECT * FROM log_details1 WHERE uid = ? AND status = 'ACTIVE' ORDER BY logid DESC LIMIT 1";
       connection.query(activeSql, [uid], function (err, activeResult) {
-        // Get pending requests
-        var pendingSql = "SELECT * FROM pass_requests WHERE uid = ? AND status = 'pending' ORDER BY created_at DESC";
+        // Get pending requests - format datetime to ensure consistent format
+        var pendingSql = `SELECT requestid, uid, passtype, 
+          DATE_FORMAT(expected_out, '%Y-%m-%d %H:%i:%s') as expected_out,
+          DATE_FORMAT(expected_return, '%Y-%m-%d %H:%i:%s') as expected_return,
+          reason, emergency_contact, status, approved_by,
+          DATE_FORMAT(approved_at, '%Y-%m-%d %H:%i:%s') as approved_at,
+          rejection_reason,
+          DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s') as created_at
+          FROM pass_requests WHERE uid = ? AND status = 'pending' ORDER BY created_at DESC`;
         connection.query(pendingSql, [uid], function (err, pendingResult) {
-          connection.release();
+          // Get approved requests
+          var approvedSql = `SELECT requestid, uid, passtype, 
+          DATE_FORMAT(expected_out, '%Y-%m-%d %H:%i:%s') as expected_out,
+          DATE_FORMAT(expected_return, '%Y-%m-%d %H:%i:%s') as expected_return,
+          reason, emergency_contact, status, approved_by,
+          DATE_FORMAT(approved_at, '%Y-%m-%d %H:%i:%s') as approved_at,
+          rejection_reason,
+          DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s') as created_at
+          FROM pass_requests WHERE uid = ? AND status = 'approved' ORDER BY created_at DESC`;
+          connection.query(approvedSql, [uid], function (err, approvedResult) {
+            // Get rejected requests
+            var rejectedSql = `SELECT requestid, uid, passtype, 
+          DATE_FORMAT(expected_out, '%Y-%m-%d %H:%i:%s') as expected_out,
+          DATE_FORMAT(expected_return, '%Y-%m-%d %H:%i:%s') as expected_return,
+          reason, emergency_contact, status, approved_by,
+          DATE_FORMAT(approved_at, '%Y-%m-%d %H:%i:%s') as approved_at,
+          rejection_reason,
+          DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s') as created_at
+          FROM pass_requests WHERE uid = ? AND status = 'rejected' ORDER BY created_at DESC`;
+            connection.query(rejectedSql, [uid], function (err, rejectedResult) {
+              connection.release();
 
-          res.render(__dirname + '/views/student_requestpass', {
-            student: student,
-            activePass: activeResult.length > 0 ? activeResult[0] : null,
-            pendingRequests: pendingResult || [],
-            message: req.flash('message')
+              res.render(__dirname + '/views/student_requestpass', {
+                student: student,
+                activePass: activeResult.length > 0 ? activeResult[0] : null,
+                pendingRequests: pendingResult || [],
+                approvedRequests: approvedResult || [],
+                rejectedRequests: rejectedResult || [],
+                message: req.flash('message')
+              });
+            });
           });
         });
       });
@@ -3766,13 +3793,33 @@ app.post('/student/requestpass', verifyStudentJwt, function (req, res) {
         }
 
         // Insert pass request
+        // Insert datetime string directly - DATETIME columns store values as-is without timezone conversion
         var insertSql = `
           INSERT INTO pass_requests 
           (uid, passtype, expected_out, expected_return, reason, emergency_contact, status, created_at) 
           VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW())`;
 
-        var expectedOut = expectedOutDate + ' ' + expectedOutTime;
-        var expectedReturn = expectedReturnDate + ' ' + (expectedReturnTime || '18:00');
+        // Ensure time format includes seconds for proper MySQL DATETIME format (YYYY-MM-DD HH:MM:SS)
+        var formatDateTime = function(dateStr, timeStr) {
+          if (!dateStr || !timeStr) return null;
+          // Normalize time format: ensure it has seconds (HH:MM -> HH:MM:00)
+          var timeParts = timeStr.split(':');
+          var timeWithSeconds;
+          if (timeParts.length === 2) {
+            // Time is in HH:MM format, add seconds
+            timeWithSeconds = timeStr + ':00';
+          } else if (timeParts.length === 3) {
+            // Time already has seconds (HH:MM:SS), use as is
+            timeWithSeconds = timeStr;
+          } else {
+            // Invalid format, default to provided time
+            timeWithSeconds = timeStr;
+          }
+          return dateStr.trim() + ' ' + timeWithSeconds.trim();
+        };
+
+        var expectedOut = formatDateTime(expectedOutDate, expectedOutTime);
+        var expectedReturn = formatDateTime(expectedReturnDate, expectedReturnTime || '20:00');
 
         connection.query(insertSql, [uid, passType, expectedOut, expectedReturn, reason, emergencyContact], function (err, insertResult) {
           connection.release();
@@ -3923,13 +3970,13 @@ app.get('/admin/passrequests', verifyjwt, function (req, res) {
       baseSql += " ORDER BY pr.created_at DESC LIMIT 100";
 
       connection.query(baseSql, params, function (err, requests) {
-        // Get statistics
+        // Get statistics - only count today's requests for total
         let statsSql = `
           SELECT 
-            COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
+            COUNT(CASE WHEN status = 'pending' AND DATE(created_at) = CURDATE() THEN 1 END) as pending,
             COUNT(CASE WHEN status = 'approved' AND DATE(approved_at) = CURDATE() THEN 1 END) as approved,
             COUNT(CASE WHEN status = 'rejected' AND DATE(approved_at) = CURDATE() THEN 1 END) as rejected,
-            COUNT(*) as total
+            COUNT(CASE WHEN DATE(created_at) = CURDATE() THEN 1 END) as total
           FROM pass_requests`;
 
         connection.query(statsSql, function (err, statsResult) {

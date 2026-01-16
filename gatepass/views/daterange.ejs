@@ -21,28 +21,16 @@
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       overflow-x: hidden;
-    }
-
-    .bg-image {
-      min-height: 100vh;
-      background-image: url('https://c6.staticflickr.com/6/5632/22039742925_0b6b145b8c_b.jpg');
       background-size: cover;
-      background-position: center;
-      background-attachment: fixed;
-
-      position: relative;
+    background-attachment: fixed;
+    background-position: center;
+    background-repeat: no-repeat;
+    transition: background-image 0.5s ease-in-out;
     }
 
-    .bg-image::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
+   
 
-      z-index: 0;
-    }
+    
 
     .content-wrapper {
       position: relative;
@@ -226,7 +214,7 @@
       <!-- Logo -->
       <div class="logo-container">
         <a href="/daterange">
-          <img src="/images/logo.png" alt="Logo" />
+          <img style="filter: drop-shadow(0 10px 100px rgba(0, 0, 0, 0.1)); " src="/images/logo.png" alt="Logo" />
         </a>
       </div>
 
@@ -395,6 +383,34 @@
       <%- include('content.ejs') %>
     </div>
   </div>
+
+
+
+  <script>
+    const backgroundImages = [
+        '/loginimages/1.jpg',
+        '/loginimages/2.jpg',
+        '/loginimages/3.jpg',
+        '/loginimages/4.jpg',
+        '/loginimages/5.jpg',
+        '/loginimages/6.jpg',   
+        '/loginimages/7.jpg'
+        
+    ];
+    
+    let currentImageIndex = 0;
+    
+    function changeBackground() {
+        document.body.style.backgroundImage = `url('${backgroundImages[currentImageIndex]}')`;
+        currentImageIndex = (currentImageIndex + 1) % backgroundImages.length;
+    }
+    
+    // Set initial background
+    changeBackground();
+
+    // Change background every 5 seconds
+    setInterval(changeBackground, 20000);
+</script>
 </body>
 
 </html>
