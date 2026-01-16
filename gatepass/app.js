@@ -209,8 +209,8 @@ app.get('/homepage', verifyjwt, function (req, res) {
     const decode = jwt.verify(tokenadmin, secretkey);
 
     role = decode.role;
-    if (role == "SuperID" || role == "Gateauthority" || role == "BoysHostelAdmin" || role == "GirlsHostelAdmin") {
-      res.render(__dirname + '/views/homepage', { message: req.flash('message') });
+    if (role == "SuperID" || role == "Gateauthority" || role == "BoysHostelAdmin" || role == "GirlsHostelAdmin" || role == "KitchenAdmin" || role == "Technician") {
+      res.render(__dirname + '/views/homepage', { message: req.flash('message'), role: role });
     }
     else {
       req.flash('message', 'Unauthorised Access', role);
@@ -2330,6 +2330,12 @@ app.post('/loginpanel', function (req, res) {
                 }
                 else if (role == "Hostelauthority") {
                   res.redirect("/tokenhomepage");
+                }
+                else if (role == "KitchenAdmin") {
+                  res.redirect("/kitchen");
+                }
+                else if (role == "Technician") {
+                  res.redirect("/complain");
                 }
 
               } catch (err) {
@@ -4635,9 +4641,41 @@ app.get('/analytics/global', verifyjwt, async function (req, res) {
   }
 });
 
+app.get('/kitchen', verifyjwt, function (req, res) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    role = decode.role;
+    if (role == "KitchenAdmin") {
+      res.render(__dirname + '/views/kitchen', { message: req.flash('message') });
+    } else {
+      req.flash('message', 'Unauthorised Access');
+      return res.redirect('/loginpanel');
+    }
+  } catch (err) {
+    res.clearCookie("jwt");
+    req.flash('message', 'Something went wrong');
+    return res.redirect('/loginpanel');
+  }
+});
 
-
-
+app.get('/complain', verifyjwt, function (req, res) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    role = decode.role;
+    if (role == "Technician") {
+      res.render(__dirname + '/views/complain', { message: req.flash('message') });
+    } else {
+      req.flash('message', 'Unauthorised Access');
+      return res.redirect('/loginpanel');
+    }
+  } catch (err) {
+    res.clearCookie("jwt");
+    req.flash('message', 'Something went wrong');
+    return res.redirect('/loginpanel');
+  }
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
