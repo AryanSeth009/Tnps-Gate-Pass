@@ -1,4 +1,4 @@
-var dbbconnection = require('./server');
+﻿var dbbconnection = require('./server');
 //server1 for offline
 var express = require('express');
 var app = express();
@@ -4801,7 +4801,68 @@ app.get('/kitchen', verifyjwt, function (req, res) {
     const decode = jwt.verify(tokenadmin, secretkey);
     role = decode.role;
     if (role == "KitchenAdmin") {
-      res.render(__dirname + '/views/kitchen', { message: req.flash('message') });
+      dbbconnection.getConnection(function (err, connection) {
+        if (err) {
+          console.log(err);
+          req.flash('message', 'Database connection error');
+          return res.render(__dirname + '/views/kitchen', { message: req.flash('message'), vegCount: 0, nonVegCount: 0 });
+        }
+        var sql = `
+          SELECT mess_type, COUNT(*) as count 
+          FROM studentdetails s 
+          JOIN daily_attendance d ON s.uid = d.uid 
+          WHERE d.date = CURDATE() AND d.status = 'Present' 
+          GROUP BY mess_type
+        `;
+        connection.query(sql, function (err, results) {
+          if (err) {
+            console.log(err);
+            req.flash('message', 'Error fetching data');
+            connection.release();
+            return res.render(__dirname + '/views/kitchen', { message: req.flash('message'), vegCount: 0, nonVegCount: 0, logs: [] });
+          }
+          let vegCount = 0;
+          let nonVegCount = 0;
+          results.forEach(row => {
+            if (row.mess_type === 'Veg') {
+              vegCount = row.count;
+            } else if (row.mess_type === 'Non-Veg') {
+              nonVegCount = row.count;
+            }
+          });
+          // Now fetch logs for last 7 days
+          var logsSql = `
+            SELECT DATE_FORMAT(d.date, '%Y-%m-%d') as date, s.mess_type, COUNT(*) as count 
+            FROM studentdetails s 
+            JOIN daily_attendance d ON s.uid = d.uid 
+            WHERE d.status = 'Present' AND d.date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) AND d.date < CURDATE()
+            GROUP BY d.date, s.mess_type 
+            ORDER BY d.date DESC, s.mess_type
+          `;
+          connection.query(logsSql, function (err, logsResults) {
+            connection.release();
+            if (err) {
+              console.log(err);
+              req.flash('message', 'Error fetching logs');
+              return res.render(__dirname + '/views/kitchen', { message: req.flash('message'), vegCount, nonVegCount, logs: [] });
+            }
+            // Process logs into a map or array
+            let logsMap = {};
+            logsResults.forEach(row => {
+              if (!logsMap[row.date]) {
+                logsMap[row.date] = { date: row.date, veg: 0, nonveg: 0 };
+              }
+              if (row.mess_type === 'Veg') {
+                logsMap[row.date].veg = row.count;
+              } else if (row.mess_type === 'Non-Veg') {
+                logsMap[row.date].nonveg = row.count;
+              }
+            });
+            let logs = Object.values(logsMap);
+            res.render(__dirname + '/views/kitchen', { message: req.flash('message'), vegCount, nonVegCount, logs });
+          });
+        });
+      });
     } else {
       req.flash('message', 'Unauthorised Access');
       return res.redirect('/loginpanel');
@@ -4819,7 +4880,24 @@ app.get('/complain', verifyjwt, function (req, res) {
     const decode = jwt.verify(tokenadmin, secretkey);
     role = decode.role;
     if (role == "Technician") {
-      res.render(__dirname + '/views/complain', { message: req.flash('message') });
+      dbbconnection.getConnection(function (err, connection) {
+        if (err) {
+          console.log(err);
+          req.flash('message', 'Database error');
+          return res.render(__dirname + '/views/complain', { message: req.flash('message'), complaints: [], role: role });
+        }
+        const sql = 'SELECT c.*, s.sname FROM complaints c JOIN studentdetails s ON c.student_uid = s.uid WHERE c.status IN ("approved", "resolved") ORDER BY c.timestamp DESC';
+        connection.query(sql, function(err, results) {
+          if (err) {
+            connection.release();
+            console.log(err);
+            req.flash('message', 'Error fetching complaints');
+            return res.render(__dirname + '/views/complain', { message: req.flash('message'), complaints: [], role: role });
+          }
+          connection.release();
+          res.render(__dirname + '/views/complain', { message: req.flash('message'), complaints: results, role: role });
+        });
+      });
     } else {
       req.flash('message', 'Unauthorised Access');
       return res.redirect('/loginpanel');
@@ -4830,6 +4908,276 @@ app.get('/complain', verifyjwt, function (req, res) {
     return res.redirect('/loginpanel');
   }
 });
+
+// Middleware for student verification
+function verifyStudentJWT(req, res, next) {
+  const token = req.cookies.studentjwt;
+  if (!token) {
+    req.flash('message', 'Please login first');
+    return res.redirect('/student/login');
+  }
+  try {
+    const decode = jwt.verify(token, studentSecretKey);
+    req.student = decode;
+    next();
+  } catch (err) {
+    res.clearCookie("studentjwt");
+    req.flash('message', 'Session expired, please login again');
+    return res.redirect('/student/login');
+  }
+}
+
+// Student complain routes
+app.get('/student/complain', verifyStudentJWT, function (req, res) {
+  const student_uid = req.student.uid;
+  
+  dbbconnection.getConnection(function (err, connection) {
+    if (err) {
+      console.log(err);
+      req.flash('message', 'Database error');
+      return res.render(__dirname + '/views/student_complain', { message: req.flash('message'), student: null });
+    }
+    
+    const sql = 'SELECT * FROM studentdetails WHERE uid = ?';
+    connection.query(sql, [student_uid], function (err, results) {
+      connection.release();
+      if (err || results.length === 0) {
+        req.flash('message', 'Student not found');
+        return res.render(__dirname + '/views/student_complain', { message: req.flash('message'), student: null });
+      }
+      
+      res.render(__dirname + '/views/student_complain', { 
+        message: req.flash('message'), 
+        student: results[0] 
+      });
+    });
+  });
+});
+
+app.post('/student/complain', verifyStudentJWT, function (req, res) {
+  const { category, description } = req.body;
+  const student_uid = req.student.uid;
+
+  // Validate required fields
+  if (!category || !description) {
+    req.flash('message', 'Please fill in all required fields');
+    return res.redirect('/student/complain');
+  }
+
+  if (!student_uid) {
+    req.flash('message', 'Student UID not found. Please login again.');
+    return res.redirect('/student/login');
+  }
+
+
+
+  dbbconnection.getConnection(function (err, connection) {
+    if (err) {
+      console.error('Database connection error:', err);
+      req.flash('message', 'Database error');
+      return res.redirect('/student/complain');
+    }
+    const sql = 'INSERT INTO complaints (student_uid, description, category) VALUES (?, ?, ?)';
+    connection.query(sql, [student_uid, description, category], function (err, result) {
+      connection.release();
+      if (err) {
+        console.error('Error submitting complaint:', err);
+        req.flash('message', 'Error submitting complaint: ' + err.message);
+        return res.redirect('/student/complain');
+      }
+      req.flash('message', 'Complaint submitted successfully');
+      res.redirect('/student/dashboard');
+    });
+  });
+});
+
+// Admin verify complaints
+app.get('/admin/verify-complaints', verifyjwt, function (req, res) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    role = decode.role;
+    if (role == "SuperID") {
+      dbbconnection.getConnection(function (err, connection) {
+        if (err) {
+          console.log(err);
+          req.flash('message', 'Database error');
+          return res.render(__dirname + '/views/admin_verify_complaints', { message: req.flash('message'), complaints: [], role: role });
+        }
+        const sql = 'SELECT * FROM complaints WHERE status IN ("pending_approval", "resolved") ORDER BY timestamp DESC';
+        connection.query(sql, function (err, results) {
+          connection.release();
+          if (err) {
+            console.log(err);
+            req.flash('message', 'Error fetching complaints');
+            return res.render(__dirname + '/views/admin_verify_complaints', { message: req.flash('message'), complaints: [], role: role });
+          }
+          res.render(__dirname + '/views/admin_verify_complaints', { message: req.flash('message'), complaints: results, role: role });
+        });
+      });
+    } else {
+      req.flash('message', 'Unauthorised Access');
+      return res.redirect('/loginpanel');
+    }
+  } catch (err) {
+    res.clearCookie("jwt");
+    req.flash('message', 'Something went wrong');
+    return res.redirect('/loginpanel');
+  }
+});
+
+// Approve complaint
+app.patch('/admin/approve-complain/:id', verifyjwt, function (req, res) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    role = decode.role;
+    if (role == "SuperID") {
+      const id = req.params.id;
+      dbbconnection.getConnection(function (err, connection) {
+        if (err) {
+          console.log(err);
+          return res.status(500).json({ success: false, message: 'Database error' });
+        }
+        const sql = 'UPDATE complaints SET status = "approved" WHERE id = ?';
+        connection.query(sql, [id], function (err, result) {
+          connection.release();
+          if (err) {
+            console.log(err);
+            return res.status(500).json({ success: false, message: 'Error approving complaint' });
+          }
+          res.json({ success: true, message: 'Complaint approved' });
+        });
+      });
+    } else {
+      res.status(403).json({ success: false, message: 'Unauthorised' });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Something went wrong' });
+  }
+});
+
+// Deny complaint
+app.patch('/admin/deny-complain/:id', verifyjwt, function (req, res) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    role = decode.role;
+    if (role == "SuperID") {
+      const id = req.params.id;
+      dbbconnection.getConnection(function (err, connection) {
+        if (err) {
+          console.log(err);
+          return res.status(500).json({ success: false, message: 'Database error' });
+        }
+        // Try to set status to 'denied', if that fails due to ENUM constraint, use 'resolved' as fallback
+        const sql = 'UPDATE complaints SET status = ? WHERE id = ?';
+        connection.query(sql, ['denied', id], function (err, result) {
+          if (err) {
+            // If 'denied' is not in ENUM, try using 'resolved' as fallback
+            if (err.code === 'ER_TRUNCATED_WRONG_VALUE_FOR_FIELD' || err.code === 'WARN_DATA_TRUNCATED') {
+              const fallbackSql = 'UPDATE complaints SET status = "resolved" WHERE id = ?';
+              connection.query(fallbackSql, [id], function (fallbackErr, fallbackResult) {
+                connection.release();
+                if (fallbackErr) {
+                  console.log(fallbackErr);
+                  return res.status(500).json({ success: false, message: 'Error denying complaint' });
+                }
+                res.json({ success: true, message: 'Complaint denied (marked as resolved)' });
+              });
+            } else {
+              connection.release();
+              console.log(err);
+              return res.status(500).json({ success: false, message: 'Error denying complaint' });
+            }
+          } else {
+            connection.release();
+            res.json({ success: true, message: 'Complaint denied' });
+          }
+        });
+      });
+    } else {
+      res.status(403).json({ success: false, message: 'Unauthorised' });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Something went wrong' });
+  }
+});
+
+// Update technician complain to show only approved
+
+
+
+
+
+
+// Update technician complain to show only approved
+app.get('/technician/complain', verifyjwt, function (req, res) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    role = decode.role;
+    if (role == "Technician") {
+      dbbconnection.getConnection(function (err, connection) {
+        if (err) {
+          console.log(err);
+          req.flash('message', 'Database error');
+          return res.render(__dirname + '/views/complain', { message: req.flash('message'), complaints: [] });
+        }
+        const sql = 'SELECT c.*, s.sname FROM complaints c JOIN studentdetails s ON c.student_uid = s.uid WHERE c.status = "approved" ORDER BY c.timestamp DESC';
+        connection.query(sql, function (err, results) {
+          connection.release();
+          if (err) {
+            console.log(err);
+            req.flash('message', 'Error fetching complaints');
+            return res.render(__dirname + '/views/complain', { message: req.flash('message'), complaints: [] });
+          }
+          res.render(__dirname + '/views/complain', { message: req.flash('message'), complaints: results });
+        });
+      });
+    } else {
+      req.flash('message', 'Unauthorised Access');
+      return res.redirect('/loginpanel');
+    }
+  } catch (err) {
+    res.clearCookie("jwt");
+    req.flash('message', 'Something went wrong');
+    return res.redirect('/loginpanel');
+  }
+});
+
+
+// Mark complaint as resolved (Technician)
+app.patch('/technician/complain/:id/resolve', verifyjwt, function (req, res) {
+  const tokenadmin = req.cookies.jwt;
+  try {
+    const decode = jwt.verify(tokenadmin, secretkey);
+    role = decode.role;
+    if (role == "Technician") {
+      const id = req.params.id;
+      dbbconnection.getConnection(function (err, connection) {
+        if (err) {
+          console.log(err);
+          return res.status(500).json({ success: false, message: 'Database error' });
+        }
+        const sql = 'UPDATE complaints SET status = "resolved" WHERE id = ?';
+        connection.query(sql, [id], function (err, result) {
+          connection.release();
+          if (err) {
+            console.log(err);
+            return res.status(500).json({ success: false, message: 'Error marking complaint as resolved' });
+          }
+          res.json({ success: true, message: 'Complaint marked as resolved' });
+        });
+      });
+    } else {
+      res.status(403).json({ success: false, message: 'Unauthorised' });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Something went wrong' });
+  }
+});
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
