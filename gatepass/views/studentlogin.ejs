@@ -7,6 +7,38 @@
     <link rel="stylesheet" href="/stylesheets/studentportal.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="icon" href="/images/4174.png">
+    <style>
+        html, body {
+            height: 100%;
+        }
+        body {
+            background-size: cover;
+            background-position: center center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+            margin: 0;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .student-login-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+        .student-login-box {
+            z-index: 2;
+         
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            max-width: 420px;
+            width: 100%;
+        }
+        .p{
+            color: white;
+        }
+    </style>
 </head>
 <body>
     <div class="student-login-container">
@@ -14,7 +46,7 @@
             <div class="login-header">
                 <img src="/images/logo.png" alt="Logo">
                 <h1>Student Portal</h1>
-                <p>Login to access your dashboard</p>
+                <p style="box-shadow: 20px;">Login to access your dashboard</p>
             </div>
             
             <% if(message && message.length > 0){ %>
@@ -43,7 +75,7 @@
             </form>
             
             <div class="login-footer">
-                <p>First time? Use your mobile number as password</p>
+                <p style="color:whitesmoke">First time? Use your mobile number as password</p>
                 <p style="margin-top: 10px;">
                     <a href="/loginpanel">Admin Login</a>
                 </p>

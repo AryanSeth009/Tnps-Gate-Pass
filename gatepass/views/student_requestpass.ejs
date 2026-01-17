@@ -180,7 +180,7 @@
                     
                     <div class="form-group">
                         <label><i class="fas fa-ticket-alt"></i> Pass Type *</label>
-                        <select name="passType" required>
+                        <select id="passType" name="passType" required>
                             <option value="">Select Pass Type</option>
                             <option value="City Pass">City Pass (Short Duration)</option>
                             <option value="Home Pass">Home Pass (Long Duration)</option>
@@ -190,7 +190,7 @@
                     <div class="form-row">
                         <div class="form-group">
                             <label><i class="fas fa-calendar"></i> Expected Out Date *</label>
-                            <input type="date" name="expectedOutDate" required min="<%= new Date().toISOString().split('T')[0] %>">
+                            <input type="date" id="expectedOutDate" name="expectedOutDate" required min="<%= new Date().toISOString().split('T')[0] %>">
                         </div>
                         <div class="form-group">
                             <label><i class="fas fa-clock"></i> Expected Out Time *</label>
@@ -201,7 +201,7 @@
                     <div class="form-row">
                         <div class="form-group">
                             <label><i class="fas fa-calendar-check"></i> Expected Return Date *</label>
-                            <input type="date" name="expectedReturnDate" required min="<%= new Date().toISOString().split('T')[0] %>">
+                            <input type="date" id="expectedReturnDate" name="expectedReturnDate" required min="<%= new Date().toISOString().split('T')[0] %>">
                         </div>
                         <div class="form-group">
                             <label><i class="fas fa-clock"></i> Expected Return Time</label>
@@ -438,18 +438,78 @@
     </script>
         <script>
             // Format all elements with class 'dt-format'; support date-only via data-date-only
+            // IMPORTANT: Treats all dates as LOCAL TIME (not UTC) to match user's timezone
             (function(){
                 function formatDateString(s, dateOnly) {
                     try {
-                        var d = new Date(s);
-                        if (isNaN(d.getTime())) return s;
+                        if (!s) return s;
+                        
+                        // Trim whitespace and normalize the string
+                        s = String(s).trim();
+                        
+                        // MySQL DATETIME format: YYYY-MM-DD HH:MM:SS or YYYY-MM-DD HH:MM
+                        // Parse manually to ensure LOCAL time interpretation (not UTC)
+                        var mysqlLike = /^(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(?:\s*[Z+-]|$)/;
+                        var m = s.match(mysqlLike);
+                        
+                        var d;
+                        if (m) {
+                            // Extract components and create LOCAL Date object (not UTC)
+                            var year = parseInt(m[1], 10);
+                            var month = parseInt(m[2], 10) - 1; // JavaScript months are 0-indexed
+                            var day = parseInt(m[3], 10);
+                            var hour = parseInt(m[4], 10);
+                            var minute = parseInt(m[5], 10);
+                            var second = parseInt(m[6] || '0', 10);
+                            
+                            // Create Date in LOCAL timezone (this is the key fix)
+                            d = new Date(year, month, day, hour, minute, second);
+                        } else {
+                            // Fallback: try standard Date parsing
+                            // But replace space with 'T' to avoid UTC interpretation
+                            var normalized = s.replace(' ', 'T');
+                            if (!normalized.includes('Z') && !normalized.match(/[+-]\d{2}:\d{2}$/)) {
+                                // No timezone info, parse components manually
+                                var fallbackMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/);
+                                if (fallbackMatch) {
+                                    d = new Date(
+                                        parseInt(fallbackMatch[1], 10),
+                                        parseInt(fallbackMatch[2], 10) - 1,
+                                        parseInt(fallbackMatch[3], 10),
+                                        parseInt(fallbackMatch[4], 10),
+                                        parseInt(fallbackMatch[5], 10),
+                                        parseInt(fallbackMatch[6] || '0', 10)
+                                    );
+                                } else {
+                                    d = new Date(s);
+                                }
+                            } else {
+                                d = new Date(s);
+                            }
+                        }
+
+                        if (isNaN(d.getTime())) {
+                            console.warn('Invalid date:', s);
+                            return s; // Return original string if parsing fails
+                        }
+                        
                         if (dateOnly) {
                             var opts = { year: 'numeric', month: 'short', day: 'numeric' };
                             return d.toLocaleDateString(undefined, opts);
                         }
-                        var opts = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true };
+                        var opts = { 
+                            weekday: 'short', 
+                            year: 'numeric', 
+                            month: 'short', 
+                            day: 'numeric', 
+                            hour: 'numeric', 
+                            minute: '2-digit', 
+                            second: '2-digit', 
+                            hour12: true 
+                        };
                         return d.toLocaleString(undefined, opts);
                     } catch (e) {
+                        console.error('Date formatting error:', e, 'for string:', s);
                         return s;
                     }
                 }
@@ -464,6 +524,69 @@
                     });
                 });
             })();
+        </script>
+        <script>
+            // Lock Expected Out Date and Return Date to today when Pass Type is City Pass (client-side UX)
+            document.addEventListener('DOMContentLoaded', function(){
+                var passType = document.getElementById('passType');
+                var outDate = document.getElementById('expectedOutDate');
+                var returnDate = document.getElementById('expectedReturnDate');
+                if (!passType || !outDate || !returnDate) return;
+
+                function todayISO(){
+                    var d = new Date();
+                    return d.toISOString().split('T')[0];
+                }
+
+                function applyLock(){
+                    var form = outDate.closest('form');
+                    var hiddenOutId = 'hidden_expectedOutDate';
+                    var hiddenReturnId = 'hidden_expectedReturnDate';
+                    if (passType.value === 'City Pass'){
+                        var today = todayISO();
+                        
+                        // Lock Expected Out Date
+                        outDate.value = today;
+                        outDate.disabled = true;
+                        var existingOut = document.getElementById(hiddenOutId);
+                        if (!existingOut) {
+                            existingOut = document.createElement('input');
+                            existingOut.type = 'hidden';
+                            existingOut.id = hiddenOutId;
+                            existingOut.name = outDate.name;
+                            form.appendChild(existingOut);
+                        }
+                        existingOut.value = today;
+                        
+                        // Lock Expected Return Date
+                        returnDate.value = today;
+                        returnDate.disabled = true;
+                        var existingReturn = document.getElementById(hiddenReturnId);
+                        if (!existingReturn) {
+                            existingReturn = document.createElement('input');
+                            existingReturn.type = 'hidden';
+                            existingReturn.id = hiddenReturnId;
+                            existingReturn.name = returnDate.name;
+                            form.appendChild(existingReturn);
+                        }
+                        existingReturn.value = today;
+                    } else {
+                        // Unlock Expected Out Date
+                        outDate.disabled = false;
+                        var existingOut = document.getElementById(hiddenOutId);
+                        if (existingOut && existingOut.parentNode) existingOut.parentNode.removeChild(existingOut);
+                        
+                        // Unlock Expected Return Date
+                        returnDate.disabled = false;
+                        var existingReturn = document.getElementById(hiddenReturnId);
+                        if (existingReturn && existingReturn.parentNode) existingReturn.parentNode.removeChild(existingReturn);
+                    }
+                }
+
+                passType.addEventListener('change', applyLock);
+                // initialize on load
+                applyLock();
+            });
         </script>
 </body>
 </html>

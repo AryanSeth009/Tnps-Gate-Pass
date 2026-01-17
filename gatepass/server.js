@@ -15,15 +15,25 @@ const connection = mysql.createPool({
     multipleStatements: true,
     connectionLimit: 100000,
     waitForConnections: true,
-    queueLimit: 0
+    queueLimit: 0,
+    // Set timezone to UTC to prevent automatic timezone conversion
+    // This ensures datetimes are stored/retrieved exactly as provided
+    timezone: '+00:00'
 });
 
-connection.getConnection(function (err) {
+connection.getConnection(function (err, connection) {
     if(err){
         console.log(err);
     }
     else{
         console.log("connection created with Mysql successfully");
+        // Set session timezone to UTC to ensure consistent datetime handling
+        connection.query("SET time_zone = '+00:00'", function(err) {
+            if (err) {
+                console.log("Warning: Could not set timezone:", err);
+            }
+        });
+        connection.release();
     }
  });
 

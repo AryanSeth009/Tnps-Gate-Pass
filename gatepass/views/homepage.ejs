@@ -57,7 +57,15 @@
         <div class="m-4">
             <nav class="navbar navbar-expand-lg navbar-light bg-light text-dark">
                 <a  class="nav-item nav-link text-dark" onclick="showdiv()">Enter UID</a>
+                <% if (role === 'KitchenAdmin') { %>
+                <a href="/kitchen" class="nav-item nav-link text-dark">Kitchen</a>
+                <% } else if (role === 'Technician') { %>
+                <a href="/technician/complain" class="nav-item nav-link text-dark">Complain</a>
+                <% } else if (role === 'SuperID') { %>
+                <a href="/admin/verify-complaints" class="nav-item nav-link text-dark">Verify Complaints</a>
+                <% } else { %>
                 <a href="/gateouttoday" class="nav-item nav-link text-dark">Gateout</a>
+                <% } %>
                
                   <div class="navbar-nav ms-auto">
                     <a href="/logout" class="nav-item nav-link text-dark">Logout</a>

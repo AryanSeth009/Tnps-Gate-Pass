@@ -7,14 +7,6 @@
     <link rel="stylesheet" href="/stylesheets/studentportal.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="icon" href="/images/4174.png">
-
-    <style>
-
-        a{
-
-            text-decoration: none;
-        }
-    </style>
 </head>
 <body>
     <!-- Mobile Menu Toggle -->
@@ -61,9 +53,9 @@
                 </a>
             </li>
             <li>
-                <a href="/student/requestpass" style="text-decoration: none;">
+                <a href="/student/requestpass">
                     <i class="fas fa-ticket-alt"></i>
-                    <span >Request Pass</span>
+                    <span>Request Pass</span>
                 </a>
             </li>
             <li>
@@ -95,8 +87,8 @@
             </div>
             
             <div class="user-actions">
-                <a href="/student/requestpass" class="notification-btn" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; text-decoration: none;">
-                    <i class="fas fa-plus"></i> Request Pass
+                <a href="/student/notifications" class="notification-btn">
+                    <i class="fas fa-bell"></i>
                 </a>
                 <a href="/student/logout" class="logout-btn" style="text-decoration: none;">
                     <i class="fas fa-sign-out-alt"></i>
@@ -104,6 +96,13 @@
                 </a>
             </div>
         </div>
+        
+        <% if(message && message.length > 0){ %>
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                <%- message %>
+            </div>
+        <% } %>
         
         <!-- Statistics Cards -->
         <div class="dashboard-cards">
@@ -247,10 +246,34 @@
                                         <%= pass.passtype || 'N/A' %>
                                     </span>
                                 </td>
-                                <td><%= pass.approvaldt || 'N/A' %></td>
-                                <td><%= pass.outdatetime || '-' %></td>
-                                <td><%= pass.indatetime || '-' %></td>
-                                <td><%= pass.hostelintime || '-' %></td>
+                                <td>
+                                    <% if(pass.approvaldt){ %>
+                                        <span class="dt-format" data-date="<%= pass.approvaldt %>" data-date-only="true"></span>
+                                    <% } else { %>
+                                        N/A
+                                    <% } %>
+                                </td>
+                                <td>
+                                    <% if(pass.outdatetime){ %>
+                                        <span class="dt-format" data-date="<%= pass.outdatetime %>"></span>
+                                    <% } else { %>
+                                        -
+                                    <% } %>
+                                </td>
+                                <td>
+                                    <% if(pass.indatetime){ %>
+                                        <span class="dt-format" data-date="<%= pass.indatetime %>"></span>
+                                    <% } else { %>
+                                        -
+                                    <% } %>
+                                </td>
+                                <td>
+                                    <% if(pass.hostelintime){ %>
+                                        <span class="dt-format" data-date="<%= pass.hostelintime %>"></span>
+                                    <% } else { %>
+                                        -
+                                    <% } %>
+                                </td>
                                 <td><%= pass.Duration || pass.Durationh || 'N/A' %></td>
                                 <td><%= pass.hosteloutauth || 'N/A' %></td>
                                 <td>
@@ -277,7 +300,7 @@
                     <h3>No Pass Records</h3>
                     <p>You haven't used any gate passes yet</p>
                     <a href="/student/requestpass" class="btn-submit" style="display: inline-block; margin-top: 15px; text-decoration: none;">
-                       <div style="display: flex; justify-content: center; align-items: center; gap: 10px;"> <p>Request a Pass</p></div> 
+                        <i class="fas fa-plus"></i> Request a Pass
                     </a>
                 </div>
             <% } %>
@@ -290,6 +313,95 @@
             document.querySelector('.sidebar-overlay').classList.toggle('active');
             document.body.style.overflow = document.querySelector('.sidebar').classList.contains('active') ? 'hidden' : '';
         }
+    </script>
+    <script>
+        // Format all elements with class 'dt-format'; support date-only via data-date-only
+        // IMPORTANT: Treats all dates as LOCAL TIME (not UTC) to match user's timezone
+        (function(){
+            function formatDateString(s, dateOnly) {
+                try {
+                    if (!s) return s;
+                    
+                    // Trim whitespace and normalize the string
+                    s = String(s).trim();
+                    
+                    // MySQL DATETIME format: YYYY-MM-DD HH:MM:SS or YYYY-MM-DD HH:MM
+                    // Parse manually to ensure LOCAL time interpretation (not UTC)
+                    var mysqlLike = /^(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(?:\s*[Z+-]|$)/;
+                    var m = s.match(mysqlLike);
+                    
+                    var d;
+                    if (m) {
+                        // Extract components and create LOCAL Date object (not UTC)
+                        var year = parseInt(m[1], 10);
+                        var month = parseInt(m[2], 10) - 1; // JavaScript months are 0-indexed
+                        var day = parseInt(m[3], 10);
+                        var hour = parseInt(m[4], 10);
+                        var minute = parseInt(m[5], 10);
+                        var second = parseInt(m[6] || '0', 10);
+                        
+                        // Create Date in LOCAL timezone (this is the key fix)
+                        d = new Date(year, month, day, hour, minute, second);
+                    } else {
+                        // Fallback: try standard Date parsing
+                        // But replace space with 'T' to avoid UTC interpretation
+                        var normalized = s.replace(' ', 'T');
+                        if (!normalized.includes('Z') && !normalized.match(/[+-]\d{2}:\d{2}$/)) {
+                            // No timezone info, parse components manually
+                            var fallbackMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/);
+                            if (fallbackMatch) {
+                                d = new Date(
+                                    parseInt(fallbackMatch[1], 10),
+                                    parseInt(fallbackMatch[2], 10) - 1,
+                                    parseInt(fallbackMatch[3], 10),
+                                    parseInt(fallbackMatch[4], 10),
+                                    parseInt(fallbackMatch[5], 10),
+                                    parseInt(fallbackMatch[6] || '0', 10)
+                                );
+                            } else {
+                                d = new Date(s);
+                            }
+                        } else {
+                            d = new Date(s);
+                        }
+                    }
+
+                    if (isNaN(d.getTime())) {
+                        console.warn('Invalid date:', s);
+                        return s; // Return original string if parsing fails
+                    }
+                    
+                    if (dateOnly) {
+                        var opts = { year: 'numeric', month: 'short', day: 'numeric' };
+                        return d.toLocaleDateString(undefined, opts);
+                    }
+                    var opts = { 
+                        weekday: 'short', 
+                        year: 'numeric', 
+                        month: 'short', 
+                        day: 'numeric', 
+                        hour: 'numeric', 
+                        minute: '2-digit', 
+                        second: '2-digit', 
+                        hour12: true 
+                    };
+                    return d.toLocaleString(undefined, opts);
+                } catch (e) {
+                    console.error('Date formatting error:', e, 'for string:', s);
+                    return s;
+                }
+            }
+
+            document.addEventListener('DOMContentLoaded', function(){
+                var els = document.querySelectorAll('.dt-format');
+                els.forEach(function(el){
+                    var s = el.getAttribute('data-date');
+                    if (!s) return;
+                    var dateOnly = el.getAttribute('data-date-only') === 'true';
+                    el.textContent = formatDateString(s, dateOnly);
+                });
+            });
+        })();
     </script>
 </body>
 </html>
